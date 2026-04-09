@@ -3,6 +3,12 @@ import * as path from 'path';
 import { PtyManager } from './ptyManager';
 import { registerIpcHandlers, unregisterIpcHandlers } from './ipcHandlers';
 
+// Disable Chromium sandbox for Linux compatibility with distros like Deepin
+// where the SUID sandbox crashes on startup
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('no-sandbox');
+}
+
 let mainWindow: BrowserWindow | null = null;
 const ptyManager = new PtyManager();
 
