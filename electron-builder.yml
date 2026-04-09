@@ -1,0 +1,21 @@
+appId: com.ternimal.app
+productName: Ternimal
+directories:
+  output: release
+  buildResources: build
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+files:
+  - dist/**/*
+  - node_modules/node-pty/**/*
+  - "!vscode-src"
+  - "!release"
