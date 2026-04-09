@@ -1,16 +1,31 @@
-const { remove } = require('fs-extra');
+const { remove, rename, writeFile } = require('fs-extra');
 const path = require('path');
 
 exports.default = async function (context) {
-  // Remove chrome-sandbox to avoid SUID sandbox crashes on Linux distros
-  // like Deepin. The app uses --no-sandbox instead.
   if (context.electronPlatformName === 'linux') {
-    const chromeSandbox = path.join(context.appOutDir, 'chrome-sandbox');
+    const appOutDir = context.appOutDir;
+    const originalBin = path.join(appOutDir, 'ternimal');
+
+    // Remove chrome-sandbox to avoid SUID sandbox crashes
     try {
-      await remove(chromeSandbox);
-      console.log('  • removed chrome-sandbox (SUID not needed, using --no-sandbox)');
+      await remove(path.join(appOutDir, 'chrome-sandbox'));
+      console.log('  • removed chrome-sandbox');
     } catch {
-      // chrome-sandbox may not exist, ignore
+      // may not exist
     }
+
+    // Rename original binary and create wrapper script
+    try {
+      await rename(originalBin, originalBin + '.real');
+    } catch {
+      console.log('  • WARNING: could not rename ternimal binary');
+      return;
+    }
+
+    const script = `#!/bin/bash
+exec "$(dirname "$0")/ternimal.real" --no-sandbox "$@"
+`;
+    await writeFile(originalBin, script, { mode: 0o755 });
+    console.log('  • created wrapper ternimal -> ternimal.real --no-sandbox');
   }
 };

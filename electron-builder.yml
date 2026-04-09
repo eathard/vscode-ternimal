@@ -28,8 +28,7 @@ linux:
   vendor: Ternimal
   synopsis: Standalone terminal emulator
   description: A standalone terminal emulator built with xterm.js and node-pty, based on VS Code terminal architecture.
-  executableArgs:
-    - --no-sandbox
+  executableName: ternimal
 files:
   - dist/**/*
   - node_modules/node-pty/**/*
