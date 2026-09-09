@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ternimal — Anywhere, the same terminal</title>
+<meta name="description" content="One live session, every screen. Ternimal mirrors your desktop terminal to any browser on your LAN — scan a QR code and your phone is attached to the exact tabs already running.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230C0F16'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='18' fill='%23FFB454' text-anchor='middle'%3E%26gt;_%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0C0F16;          /* page base, blue-black */
+  --panel:#111623;        /* raised surfaces */
+  --panel-2:#161D2E;      /* terminal chrome */
+  --line:#232C40;         /* hairline borders */
+  --phosphor:#FFB454;     /* amber — the session */
+  --phosphor-dim:#B77F3F;
+  --beam:#5FD4E8;         /* cyan — the transport */
+  --paper:#E9EEF6;        /* headlines */
+  --mist:#96A2B8;         /* body */
+  --alert:#FF7A6B;        /* ✗ */
+  --ok:#8CD98C;           /* ✓ */
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--mist);font-family:var(--sans);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--beam);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+img{max-width:100%;display:block}
+::selection{background:rgba(255,180,84,.28);color:var(--paper)}
+
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+/* ---------- nav ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(12,15,22,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:22px;height:60px}
+.brand{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:16px}
+.brand b{color:var(--phosphor);font-weight:600}
+nav .spacer{flex:1}
+nav a.plain{color:var(--mist);font-size:14.5px}
+nav a.plain:hover{color:var(--paper);text-decoration:none}
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:14px;font-weight:500;padding:9px 18px;border-radius:8px;border:1px solid var(--line);color:var(--paper);background:var(--panel)}
+.btn:hover{border-color:var(--phosphor-dim);text-decoration:none}
+.btn.primary{background:var(--phosphor);border-color:var(--phosphor);color:#1A1206}
+.btn.primary:hover{background:#FFC375;border-color:#FFC375}
+.lang{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.lang button{background:none;border:0;color:var(--mist);font-family:var(--mono);font-size:12.5px;padding:8px 11px;cursor:pointer;transition:color .15s}
+.lang button:hover{color:var(--paper)}
+.lang button.active{background:var(--panel-2);color:var(--phosphor)}
+
+/* ---------- hero ---------- */
+header.hero{padding:88px 0 40px;position:relative;overflow:hidden}
+.kicker{font-family:var(--mono);font-size:13.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--beam)}
+html[lang="zh-CN"] .kicker{letter-spacing:.05em}
+h1{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:clamp(34px,6vw,64px);line-height:1.12;letter-spacing:-.03em;margin:18px 0 20px}
+h1 .same{color:var(--phosphor)}
+h1 .caret{display:inline-block;width:.55em;height:1.05em;background:var(--phosphor);vertical-align:-0.12em;margin-left:6px;animation:blink 1.06s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.lede{max-width:660px;font-size:19px;color:var(--mist)}
+.lede strong{color:var(--paper);font-weight:500}
+.lede .zh{display:block;margin-top:10px;font-size:15px;color:#6B7690}
+html[lang="zh-CN"] .lede{font-size:18px}
+.cta-row{display:flex;gap:14px;margin:30px 0 10px;flex-wrap:wrap}
+.try-hint{font-family:var(--mono);font-size:13.5px;color:var(--phosphor-dim);margin-bottom:34px}
+.try-hint kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 6px;color:var(--mist);background:var(--panel)}
+
+/* ---------- the mirrored pair ---------- */
+.mirror-stage{display:grid;grid-template-columns:1fr 260px;gap:0;align-items:end;position:relative;margin:8px 0 24px}
+.frame{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel-2);box-shadow:0 24px 60px -24px rgba(0,0,0,.7)}
+.frame .bar{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px;color:#5E6B85}
+.frame .bar .dots{display:flex;gap:6px}
+.frame .bar .dots i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.frame .bar .tag{margin-left:6px}
+.frame .bar .tag .who{color:var(--beam)}
+.term{font-family:var(--mono);font-size:13.5px;line-height:1.55;padding:16px 18px 18px;height:320px;overflow:hidden;white-space:pre-wrap;word-break:break-word;color:var(--phosphor);outline:none}
+.term .u{color:var(--beam)}          /* user/host accents */
+.term .dim{color:#7E6A45}            /* faded output */
+.term .c{color:var(--mist)}          /* plain output */
+.term .cur{display:inline-block;width:8px;height:15px;background:var(--phosphor);vertical-align:-2px;animation:blink 1.06s steps(1) infinite}
+.phone-wrap{position:relative;z-index:2;margin-left:-34px}
+.phone{width:260px;border:1px solid var(--line);border-radius:26px;padding:10px 10px 14px;background:#0A0D14;box-shadow:0 24px 60px -20px rgba(0,0,0,.8)}
+.phone .notch{width:74px;height:5px;border-radius:3px;background:#232C40;margin:2px auto 8px}
+.phone .term{height:340px;font-size:11px;padding:10px 12px 12px;border-radius:16px}
+.phone .bar{padding:4px 8px 8px;font-size:10.5px}
+.beam{position:absolute;left:52%;bottom:58%;width:200px;height:2px;background:linear-gradient(90deg,transparent,var(--beam),transparent);opacity:0;transform-origin:center;pointer-events:none}
+.beam.fire{animation:beam .7s ease-out}
+@keyframes beam{0%{opacity:0;transform:scaleX(.2)}30%{opacity:.9}100%{opacity:0;transform:scaleX(1)}}
+.mirror-caption{font-family:var(--mono);font-size:13px;color:#5E6B85;margin-top:14px}
+.mirror-caption b{color:var(--beam);font-weight:500}
+
+/* ---------- section scaffolding: cwd labels ---------- */
+section{padding:74px 0 8px}
+.cwd{font-family:var(--mono);font-size:14px;color:var(--phosphor);display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cwd::after{content:"";flex:1;height:1px;background:var(--line)}
+h2{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:clamp(24px,3.4vw,34px);letter-spacing:-.02em;margin-bottom:14px}
+.sub{max-width:660px;margin-bottom:34px}
+
+/* ---------- pain ---------- */
+.pain-list{display:flex;flex-direction:column;gap:12px}
+.pain{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:baseline;padding:16px 20px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-family:var(--mono);font-size:14.5px}
+.pain .cmd{color:var(--paper)}
+.pain .cmd .p{color:var(--beam)}
+.pain .verdict{font-family:var(--sans);font-size:16px;color:var(--mist)}
+.pain .verdict b{font-weight:500}
+.pain.bad .verdict::before{content:"✗ ";color:var(--alert);font-family:var(--mono)}
+.pain.good{border-color:var(--phosphor-dim);background:rgba(255,180,84,.05)}
+.pain.good .verdict::before{content:"✓ ";color:var(--ok);font-family:var(--mono)}
+
+/* ---------- features ---------- */
+.feat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-bottom:56px}
+.feat{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column}
+.feat .shot{border-bottom:1px solid var(--line);background:#0A0D14}
+.feat .shot img{width:100%;height:auto}
+.feat .body{padding:20px 22px 24px}
+.feat h3{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:18px;margin-bottom:8px}
+.feat h3 em{font-style:normal;color:var(--beam);font-size:13px;font-weight:400;margin-right:8px}
+.feat p{font-size:15.5px}
+.feat p code{font-family:var(--mono);font-size:13px;color:var(--phosphor);background:rgba(255,180,84,.09);padding:1px 6px;border-radius:5px}
+
+/* ---------- use cases ---------- */
+.cases{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:56px}
+.case{border:1px solid var(--line);border-radius:10px;padding:20px;background:var(--panel)}
+.case .icon{font-family:var(--mono);color:var(--beam);font-size:15px;margin-bottom:12px}
+.case h3{font-family:var(--mono);font-size:15.5px;font-weight:600;color:var(--paper);margin-bottom:6px}
+.case p{font-size:14.5px;line-height:1.55}
+
+/* ---------- compare ---------- */
+.tbl-scroll{overflow-x:auto;margin-bottom:56px}
+table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:760px}
+th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:#5E6B85;font-weight:500}
+td:first-child{font-weight:500;color:var(--paper)}
+td{color:var(--mist)}
+.yes{color:var(--ok)} .no{color:var(--alert)}
+.row-us td{background:rgba(255,180,84,.06)}
+.row-us td:first-child{color:var(--phosphor)}
+
+/* ---------- security ---------- */
+.warnbox{border:1px solid rgba(255,180,84,.4);background:rgba(255,180,84,.05);border-radius:12px;padding:26px 28px;display:grid;grid-template-columns:auto 1fr;gap:20px;margin-bottom:56px}
+.warnbox .glyph{font-family:var(--mono);color:var(--phosphor);font-size:20px}
+.warnbox h2{font-size:21px;margin-bottom:8px}
+.warnbox p{font-size:15.5px}
+.warnbox p+p{margin-top:10px}
+
+/* ---------- install ---------- */
+.install{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;margin-bottom:56px}
+.install .card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:22px 24px;min-width:0}
+.install h3{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--paper);margin-bottom:14px}
+.install h3 span{color:var(--beam);font-weight:400;margin-right:8px}
+.install .note{font-size:15px;margin-bottom:14px}
+.cmdblock{position:relative;border:1px solid var(--line);border-radius:8px;background:#0A0D14;padding:13px 52px 13px 16px;font-family:var(--mono);font-size:13.5px;color:var(--phosphor);margin-bottom:10px;overflow-x:auto;white-space:nowrap}
+.cmdblock .p{color:var(--beam)}
+.copy{position:absolute;top:50%;right:8px;transform:translateY(-50%);border:1px solid var(--line);background:var(--panel-2);color:var(--mist);font-family:var(--mono);font-size:11px;border-radius:6px;padding:4px 9px;cursor:pointer}
+.copy:hover{color:var(--paper);border-color:var(--phosphor-dim)}
+.copy.done{color:var(--ok);border-color:var(--ok)}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line);padding:36px 0 48px;margin-top:30px}
+footer .wrap{display:flex;align-items:baseline;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:13.5px;color:#5E6B85}
+footer .sig{color:var(--phosphor)}
+
+/* ---------- motion & a11y ---------- */
+@media (prefers-reduced-motion:reduce){
+  .caret,.cur{animation:none}
+  .beam.fire{animation:none;opacity:0}
+  html{scroll-behavior:auto}
+}
+@media (max-width:880px){
+  .feat-grid{grid-template-columns:1fr}
+  .cases{grid-template-columns:repeat(2,1fr)}
+  .mirror-stage{grid-template-columns:1fr}
+  .phone-wrap{margin:22px 0 0;justify-self:end}
+  .beam{display:none}
+  .pain{grid-template-columns:1fr;gap:6px}
+  .install{grid-template-columns:1fr}
+  .warnbox{grid-template-columns:1fr}
+  nav .plain{display:none}
+  nav .wrap{gap:12px}
+  .btn{padding:9px 13px}
+}
+:focus-visible{outline:2px solid var(--beam);outline-offset:2px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top">ternimal<b>&gt;_</b></a>
+    <span class="spacer"></span>
+    <a class="plain" href="#pain" data-i18n="nav_why">Why</a>
+    <a class="plain" href="#features" data-i18n="nav_features">Features</a>
+    <a class="plain" href="#security" data-i18n="nav_security">Security</a>
+    <a class="plain" href="#install" data-i18n="nav_install">Install</a>
+    <div class="lang" role="group" aria-label="language">
+      <button id="lang-en" type="button">EN</button>
+      <button id="lang-zh" type="button">中文</button>
+    </div>
+    <a class="btn primary" href="https://github.com/eathard/vscode-ternimal/releases/latest" target="_blank" rel="noopener" data-i18n="nav_download">↓ Download</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <p class="kicker" data-i18n="kicker">open source · LAN/VPN by design · no cloud</p>
+    <h1><span data-i18n="h1a">Anywhere,</span><br><span data-i18n="h1b">the <span class="same">same</span> terminal</span><span class="caret" aria-hidden="true"></span></h1>
+    <p class="lede">
+      <span data-i18n="lede">Ternimal mirrors your desktop terminal to any browser on your network. Scan a QR code and your phone is attached to <strong>the exact tabs that are already running</strong> — with the scrollback, the agent, and the half-finished command.</span>
+      <span class="zh" id="lede-zh">同一会话，随处可达 —— 扫码即达，断线不亡。</span>
+    </p>
+    <div class="cta-row">
+      <a class="btn primary" href="#install" data-i18n="cta_start">Get started</a>
+      <a class="btn" href="https://github.com/eathard/vscode-ternimal" target="_blank" rel="noopener" data-i18n="cta_github">View on GitHub</a>
+    </div>
+    <p class="try-hint" data-i18n="try_hint">↓ this terminal is real — click it and type. it mirrors. <kbd>help</kbd> works.</p>
+
+    <div class="mirror-stage">
+      <div class="frame desktop">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="tag">ternimal — <span class="who" data-i18n="dev_desktop">desktop · electron</span></span></div>
+        <div class="term" id="term-a" tabindex="0" aria-label="live demo terminal, type to interact"></div>
+      </div>
+      <div class="phone-wrap">
+        <div class="phone frame">
+          <div class="notch"></div>
+          <div class="bar"><span class="tag"><span class="who" data-i18n="dev_phone">browser · phone</span></span></div>
+          <div class="term" id="term-b" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="beam" id="beam" aria-hidden="true"></div>
+    </div>
+    <p class="mirror-caption" data-i18n="mirror_caption">both screens show one PTY — what you type lands in <b>both</b>, exactly how your devices attach at home</p>
+  </div>
+</header>
+
+<section id="pain">
+  <div class="wrap">
+    <p class="cwd">~/why-not-ssh</p>
+    <h2 data-i18n="pain_h2">The session you can't reach</h2>
+    <p class="sub" data-i18n="pain_sub">Every existing answer to “check on my terminal from the couch” gives you a different terminal than the one you left running.</p>
+    <div class="pain-list">
+      <div class="pain bad"><span class="cmd"><span class="p">$</span> ssh into the desktop</span><p class="verdict" data-i18n="pain_1"><b>A brand-new session.</b> Your agent, your scrollback, your tabs — invisible.</p></div>
+      <div class="pain bad"><span class="cmd"><span class="p">$</span> tmux attach</span><p class="verdict" data-i18n="pain_2"><b>Works — with ceremony.</b> If it started in tmux. If you configured it. On every box.</p></div>
+      <div class="pain bad"><span class="cmd"><span class="p">$</span> stay at the desk</span><p class="verdict" data-i18n="pain_3"><b>It's a 40-minute build.</b> You've seen this episode.</p></div>
+      <div class="pain good"><span class="cmd"><span class="p">$</span> ternimal</span><p class="verdict" data-i18n="pain_4"><b>The session you already have, on the screen you're holding.</b> Same PTY, zero setup.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <p class="cwd">~/features</p>
+    <h2 data-i18n="feat_h2">One session, every screen</h2>
+    <p class="sub" data-i18n="feat_sub">Everything below is captured from a real session — no mockups.</p>
+
+    <div class="feat-grid">
+      <div class="feat">
+        <div class="shot"><img src="images/same-session.png" alt="Desktop window and phone browser showing the same live terminal session" loading="lazy"></div>
+        <div class="body">
+          <h3><em>01</em><span data-i18n="feat_1_h">Mirrored sessions</span></h3>
+          <p data-i18n="feat_1_p">The desktop window and any LAN browser attach to the same PTYs over HTTPS. Refresh, lose Wi-Fi, close the laptop — the session lives on, and a ring buffer replays what you missed on re-attach.</p>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="shot"><img src="images/signin.png" alt="Sign-in page showing the certificate SHA-256 fingerprint" loading="lazy"></div>
+        <div class="body">
+          <h3><em>02</em><span data-i18n="feat_2_h">Scan once, you're in</span></h3>
+          <p data-i18n="feat_2_p">A per-launch 192-bit token rides in the URL fragment — it never reaches the server and never lands in a log. The tray QR gets you in; rotating the token kills every session instantly. The TLS fingerprint is printed on both ends so you can eyeball for MITM.</p>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="shot"><img src="images/web-mobile.png" alt="Phone view with the floating soft-keyboard bar, Ctrl held sticky" loading="lazy"></div>
+        <div class="body">
+          <h3><em>03</em><span data-i18n="feat_3_h">A keyboard that speaks terminal</span></h3>
+          <p data-i18n="feat_3_p">Sticky <code>Ctrl</code>/<code>Alt</code>/<code>Shift</code> — stack them, one-shot them — plus <code>Esc</code>, <code>Tab</code> and arrows that follow the terminal's cursor mode. <code>Ctrl+C</code>, readline jumps and vim motion all work from a phone.</p>
+        </div>
+      </div>
+      <div class="feat">
+        <div class="shot"><img src="images/web-desktop.png" alt="The same terminal tabs in a desktop browser" loading="lazy"></div>
+        <div class="body">
+          <h3><em>04</em><span data-i18n="feat_4_h">Zero client install</span></h3>
+          <p data-i18n="feat_4_p">Remote access is a plain HTTPS page — nothing to install on the watching device. Tabs stay in lockstep between the Electron window and every attached browser.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="cases">
+  <div class="wrap">
+    <p class="cwd">~/use-cases</p>
+    <h2 data-i18n="cases_h2">Built for the walk-away moments</h2>
+    <div class="cases">
+      <div class="case"><div class="icon">&gt;_</div><h3 data-i18n="case_1_h">Agent supervision</h3><p data-i18n="case_1_p">Claude Code runs on the desktop. You supervise from the couch — check in, send the next prompt, Ctrl+C the runaway.</p></div>
+      <div class="case"><div class="icon">&amp;</div><h3 data-i18n="case_2_h">Mobile ops</h3><p data-i18n="case_2_p">Start the migration at your desk, confirm it from the kitchen. Any device on the LAN, nothing exposed past it.</p></div>
+      <div class="case"><div class="icon">%</div><h3 data-i18n="case_3_h">LAN pairing</h3><p data-i18n="case_3_p">A colleague opens the link and watches the same live session you're driving. No screen-share, no cloud relay.</p></div>
+      <div class="case"><div class="icon">~</div><h3 data-i18n="case_4_h">Flaky-network CLI</h3><p data-i18n="case_4_p">Subway Wi-Fi dies, the phone sleeps — the session doesn't. Reconnect and the replay fills in every line you missed.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <p class="cwd">~/compare</p>
+    <h2 data-i18n="cmp_h2">What “remote” should mean</h2>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr>
+          <th></th>
+          <th data-i18n="cmp_th1">Attach to the session on your screen</th>
+          <th data-i18n="cmp_th2">Client install</th>
+          <th data-i18n="cmp_th3">Sessions survive</th>
+          <th data-i18n="cmp_th4">Mobile combo keys</th>
+          <th data-i18n="cmp_th5">Cloud dependency</th>
+        </tr></thead>
+        <tbody>
+          <tr class="row-us"><td>Ternimal</td><td class="yes" data-i18n="cmp_us_1">✓ that's the point</td><td class="yes" data-i18n="cmp_us_2">browser only</td><td class="yes" data-i18n="cmp_us_3">built-in (replay)</td><td class="yes" data-i18n="cmp_us_4">sticky Ctrl/Alt/Shift</td><td class="yes" data-i18n="w_none">none</td></tr>
+          <tr><td data-i18n="cmp_r1">SSH from phone</td><td class="no" data-i18n="cmp_r1a">✗ new session</td><td class="no" data-i18n="w_client">client + keys</td><td class="no" data-i18n="cmp_r1b">dies with connection</td><td data-i18n="w_varies">varies</td><td class="yes" data-i18n="w_none2">none</td></tr>
+          <tr><td>tmux + SSH</td><td data-i18n="cmp_r2a">needs tmux discipline</td><td class="no" data-i18n="w_client2">client + keys</td><td data-i18n="cmp_r2b">via tmux</td><td data-i18n="w_varies2">varies</td><td class="yes" data-i18n="w_none3">none</td></tr>
+          <tr><td>ttyd / wetty / gotty</td><td class="no" data-i18n="cmp_r3a">✗ per connect</td><td class="yes" data-i18n="w_browser">browser</td><td class="no">✗</td><td class="no">✗</td><td class="yes" data-i18n="w_none4">none</td></tr>
+          <tr><td data-i18n="cmp_r5">tunnel + web terminal</td><td class="no">✗</td><td class="yes" data-i18n="w_browser2">browser</td><td data-i18n="w_varies3">varies</td><td class="no">✗</td><td class="no" data-i18n="w_yes">yes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <p class="cwd">~/security</p>
+    <div class="warnbox">
+      <div class="glyph">[!]</div>
+      <div>
+        <h2 data-i18n="sec_h2">This serves a shell over the network. On purpose.</h2>
+        <p data-i18n="sec_p1">That's the feature and the risk, so the boundary is designed in: HTTPS only, one rotating token per launch (constant-time compare, carried in the URL fragment), certificate fingerprints printed on both ends, per-IP lockout, hardened cookies — and auth lives in memory, so a restart revokes everything.</p>
+        <p><strong style="color:var(--paper)" data-i18n="sec_p2s">Keep it on the LAN or behind your VPN.</strong> <span data-i18n="sec_p2">Do not port-forward it to the internet.</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <p class="cwd">~/install</p>
+    <h2 data-i18n="ins_h2">Two ways in</h2>
+    <div class="install">
+      <div class="card">
+        <h3 data-i18n="ins_a_h"><span>a.</span> Download the package</h3>
+        <p class="note" data-i18n="ins_a_p">Linux AppImage and deb are on every release page:</p>
+        <div class="cmdblock"><span class="p">$</span> sudo apt install ./ternimal_1.1.0_amd64.deb</div>
+        <a href="https://github.com/eathard/vscode-ternimal/releases/latest" target="_blank" rel="noopener" data-i18n="ins_a_link">→ releases ↓</a>
+      </div>
+      <div class="card">
+        <h3 data-i18n="ins_b_h"><span>b.</span> Run from source</h3>
+        <div class="cmdblock"><span class="p">$</span> git clone https://github.com/eathard/vscode-ternimal<button class="copy" data-copy="git clone https://github.com/eathard/vscode-ternimal" data-i18n-label="copy">copy</button></div>
+        <div class="cmdblock"><span class="p">$</span> npm install --include=dev &amp;&amp; npm run rebuild<button class="copy" data-copy="npm install --include=dev && npm run rebuild" data-i18n-label="copy">copy</button></div>
+        <div class="cmdblock"><span class="p">$</span> npm run dev<button class="copy" data-copy="npm run dev" data-i18n-label="copy">copy</button></div>
+        <p class="note" style="font-size:14.5px" data-i18n="ins_b_p">First launch prints the access URL and drops a QR code in the tray.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span class="sig">ternimal&gt;_</span>
+    <a href="https://github.com/eathard/vscode-ternimal" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/eathard/vscode-ternimal/releases" target="_blank" rel="noopener" data-i18n="ft_releases">Releases</a>
+    <span data-i18n="ft_mit">MIT license</span>
+    <span style="flex:1"></span>
+    <span data-i18n="ft_credit">inspired by the VS Code terminal · built with xterm.js + node-pty</span>
+  </div>
+</footer>
+
+<script>
+/* ================= i18n ================= */
+const I18N = {
+en: {
+  title:"Ternimal — Anywhere, the same terminal",
+  nav_why:"Why", nav_features:"Features", nav_security:"Security", nav_install:"Install", nav_download:"↓ Download",
+  kicker:"open source · LAN/VPN by design · no cloud",
+  h1a:"Anywhere,", h1b:'the <span class="same">same</span> terminal',
+  lede:'Ternimal mirrors your desktop terminal to any browser on your network. Scan a QR code and your phone is attached to <strong>the exact tabs that are already running</strong> — with the scrollback, the agent, and the half-finished command.',
+  cta_start:"Get started", cta_github:"View on GitHub",
+  try_hint:'↓ this terminal is real — click it and type. it mirrors. <kbd>help</kbd> works.',
+  dev_desktop:"desktop · electron", dev_phone:"browser · phone",
+  mirror_caption:'both screens show one PTY — what you type lands in <b>both</b>, exactly how your devices attach at home',
+  pain_h2:"The session you can't reach",
+  pain_sub:"Every existing answer to “check on my terminal from the couch” gives you a different terminal than the one you left running.",
+  pain_1:"<b>A brand-new session.</b> Your agent, your scrollback, your tabs — invisible.",
+  pain_2:"<b>Works — with ceremony.</b> If it started in tmux. If you configured it. On every box.",
+  pain_3:"<b>It's a 40-minute build.</b> You've seen this episode.",
+  pain_4:"<b>The session you already have, on the screen you're holding.</b> Same PTY, zero setup.",
+  feat_h2:"One session, every screen",
+  feat_sub:"Everything below is captured from a real session — no mockups.",
+  feat_1_h:"Mirrored sessions",
+  feat_1_p:"The desktop window and any LAN browser attach to the same PTYs over HTTPS. Refresh, lose Wi-Fi, close the laptop — the session lives on, and a ring buffer replays what you missed on re-attach.",
+  feat_2_h:"Scan once, you're in",
+  feat_2_p:"A per-launch 192-bit token rides in the URL fragment — it never reaches the server and never lands in a log. The tray QR gets you in; rotating the token kills every session instantly. The TLS fingerprint is printed on both ends so you can eyeball for MITM.",
+  feat_3_h:"A keyboard that speaks terminal",
+  feat_3_p:"Sticky <code>Ctrl</code>/<code>Alt</code>/<code>Shift</code> — stack them, one-shot them — plus <code>Esc</code>, <code>Tab</code> and arrows that follow the terminal's cursor mode. <code>Ctrl+C</code>, readline jumps and vim motion all work from a phone.",
+  feat_4_h:"Zero client install",
+  feat_4_p:"Remote access is a plain HTTPS page — nothing to install on the watching device. Tabs stay in lockstep between the Electron window and every attached browser.",
+  cases_h2:"Built for the walk-away moments",
+  case_1_h:"Agent supervision", case_1_p:"Claude Code runs on the desktop. You supervise from the couch — check in, send the next prompt, Ctrl+C the runaway.",
+  case_2_h:"Mobile ops", case_2_p:"Start the migration at your desk, confirm it from the kitchen. Any device on the LAN, nothing exposed past it.",
+  case_3_h:"LAN pairing", case_3_p:"A colleague opens the link and watches the same live session you're driving. No screen-share, no cloud relay.",
+  case_4_h:"Flaky-network CLI", case_4_p:"Subway Wi-Fi dies, the phone sleeps — the session doesn't. Reconnect and the replay fills in every line you missed.",
+  cmp_h2:"What “remote” should mean",
+  cmp_th1:"Attach to the session on your screen", cmp_th2:"Client install", cmp_th3:"Sessions survive", cmp_th4:"Mobile combo keys", cmp_th5:"Cloud dependency",
+  cmp_us_1:"✓ that's the point", cmp_us_2:"browser only", cmp_us_3:"built-in (replay)", cmp_us_4:"sticky Ctrl/Alt/Shift",
+  cmp_r1:"SSH from phone", cmp_r1a:"✗ new session", cmp_r1b:"dies with connection",
+  cmp_r2a:"needs tmux discipline", cmp_r2b:"via tmux",
+  cmp_r3a:"✗ per connect", cmp_r5:"tunnel + web terminal",
+  w_none:"none", w_none2:"none", w_none3:"none", w_none4:"none",
+  w_client:"client + keys", w_client2:"client + keys",
+  w_browser:"browser", w_browser2:"browser",
+  w_varies:"varies", w_varies2:"varies", w_varies3:"varies", w_yes:"yes",
+  sec_h2:"This serves a shell over the network. On purpose.",
+  sec_p1:"That's the feature and the risk, so the boundary is designed in: HTTPS only, one rotating token per launch (constant-time compare, carried in the URL fragment), certificate fingerprints printed on both ends, per-IP lockout, hardened cookies — and auth lives in memory, so a restart revokes everything.",
+  sec_p2s:"Keep it on the LAN or behind your VPN.", sec_p2:"Do not port-forward it to the internet.",
+  ins_h2:"Two ways in",
+  ins_a_h:"<span>a.</span> Download the package", ins_a_p:"Linux AppImage and deb are on every release page:", ins_a_link:"→ releases ↓",
+  ins_b_h:"<span>b.</span> Run from source", ins_b_p:"First launch prints the access URL and drops a QR code in the tray.",
+  copy:"copy", copied:"copied",
+  ft_releases:"Releases", ft_mit:"MIT license",
+  ft_credit:"inspired by the VS Code terminal · built with xterm.js + node-pty",
+  term:{
+    help:"this demo mirrors one PTY onto both screens — like the real thing.\ntry:\n  claude \"refactor the parser\"\n  htop\n  clear\n  reboot",
+    htop_tail:"  (yes, from the couch)",
+    claude_1:"⏺ Reading 14 files, mapping the parser call graph…",
+    claude_2:"⏺ Edit  src/main/ptyManager.ts  (resize guards, 3 sites)",
+    claude_3:"  ⎿  waiting for your review — take your time, I survive disconnects",
+    reboot:"nice try. sessions here survive everything — that's the demo.",
+    clear:"[replay buffer empty]",
+    notfound:c=>`bash: ${c}: command not found (it's a demo — try 'help')`
+  }
+},
+zh: {
+  title:"Ternimal — 随处可达，同一个终端",
+  nav_why:"为何", nav_features:"特性", nav_security:"安全", nav_install:"安装", nav_download:"↓ 下载",
+  kicker:"开源 · 仅内网/VPN · 无云端",
+  h1a:"随处可达，", h1b:'<span class="same">同一个</span>终端',
+  lede:'Ternimal 把你的桌面终端镜像到网络内的任意浏览器。扫一个二维码，手机就挂载到<strong>正在运行的那组标签</strong>上——连同滚动历史、Agent、和那行没敲完的命令。',
+  cta_start:"开始使用", cta_github:"在 GitHub 查看",
+  try_hint:'↓ 这个终端是真的 —— 点进去敲敲看，两块屏同步镜像。<kbd>help</kbd> 可用。',
+  dev_desktop:"桌面 · Electron", dev_phone:"浏览器 · 手机",
+  mirror_caption:'两块屏显示的是同一个 PTY —— 你敲的字同时落在<b>两边</b>，就像家里设备真实的接入方式',
+  pain_h2:"够不着的那次会话",
+  pain_sub:"对「躺在沙发上看看终端跑得怎么样」，所有现成答案给你的都是另一个终端，而不是你留下运行的那个。",
+  pain_1:"<b>一个全新的会话。</b>你的 Agent、滚动历史、标签页——全都看不见。",
+  pain_2:"<b>可行——但要仪式感。</b>前提是它跑在 tmux 里、你都配好了、每台机器都配了。",
+  pain_3:"<b>这是个 40 分钟的构建。</b>这集你看过了。",
+  pain_4:"<b>你已经开着的会话，出现在你手里的屏幕上。</b>同一个 PTY，零配置。",
+  feat_h2:"一个会话，每块屏幕",
+  feat_sub:"以下全部截自真实会话——没有一张是示意图。",
+  feat_1_h:"镜像会话",
+  feat_1_p:"桌面窗口与局域网内任意浏览器通过 HTTPS 挂载同一组 PTY。刷新、断网、合上笔记本——会话继续活着，重连时环形缓冲回放你错过的内容。",
+  feat_2_h:"扫码即入",
+  feat_2_p:"每次启动生成 192-bit 令牌，只存在于 URL 片段中——不抵达服务器、不进日志。托盘二维码一扫即入；轮换令牌即刻吊销所有会话。TLS 指纹双侧显示，中间人一眼识破。",
+  feat_3_h:"会说终端语言的键盘",
+  feat_3_p:"粘滞 <code>Ctrl</code>/<code>Alt</code>/<code>Shift</code>——任意叠加、一次性复位——加上 <code>Esc</code>、<code>Tab</code> 和跟随终端光标模式的方向键。手机上 <code>Ctrl+C</code>、readline 跳词、vim 移动全可用。",
+  feat_4_h:"零客户端安装",
+  feat_4_p:"远程端只是一张普通 HTTPS 页面——观看设备什么都不用装。Electron 窗口与每个接入的浏览器标签实时同步。",
+  cases_h2:"为「起身离开」的时刻而生",
+  case_1_h:"Agent 监督", case_1_p:"Claude Code 在桌面跑，你在沙发监督——查看进度、发下一条指令、Ctrl+C 掐掉跑偏的。",
+  case_2_h:"移动运维", case_2_p:"工位上启动迁移，厨房里确认结果。局域网内任何设备可达，边界之外一概不通。",
+  case_3_h:"局域网结对", case_3_p:"同事打开链接就能看到你正在操作的同一个实时会话。无需屏幕共享，不经云端。",
+  case_4_h:"弱网 CLI", case_4_p:"地铁 Wi-Fi 断了、手机锁屏了——会话没死。重连即回放错过的每一行。",
+  cmp_h2:"「远程」本该是什么意思",
+  cmp_th1:"接入你屏幕上的会话", cmp_th2:"装客户端", cmp_th3:"会话存活", cmp_th4:"手机组合键", cmp_th5:"云依赖",
+  cmp_us_1:"✓ 这就是核心", cmp_us_2:"仅浏览器", cmp_us_3:"内置（回放）", cmp_us_4:"粘滞 Ctrl/Alt/Shift",
+  cmp_r1:"手机直连 SSH", cmp_r1a:"✗ 新会话", cmp_r1b:"随连接断开死亡",
+  cmp_r2a:"需 tmux 纪律", cmp_r2b:"靠 tmux",
+  cmp_r3a:"✗ 每连一新", cmp_r5:"隧道 + 网页终端",
+  w_none:"无", w_none2:"无", w_none3:"无", w_none4:"无",
+  w_client:"客户端 + 密钥", w_client2:"客户端 + 密钥",
+  w_browser:"浏览器", w_browser2:"浏览器",
+  w_varies:"参差", w_varies2:"参差", w_varies3:"不定", w_yes:"有",
+  sec_h2:"它刻意把 shell 搬上网络。",
+  sec_p1:"这是功能，也是风险，所以边界是设计的一部分：仅 HTTPS、每次启动一个轮换令牌（恒时比对、经 URL 片段携带）、证书指纹双侧展示、每 IP 锁定、硬化 cookie——鉴权只存内存，重启即吊销一切。",
+  sec_p2s:"只在内网或你自己的 VPN 里使用。", sec_p2:"不要端口转发到公网。",
+  ins_h2:"两种安装方式",
+  ins_a_h:"<span>a.</span> 下载安装包", ins_a_p:"每个 release 页面都提供 Linux AppImage 与 deb：", ins_a_link:"→ 发布页 ↓",
+  ins_b_h:"<span>b.</span> 从源码运行", ins_b_p:"首次启动会打印访问 URL，并在托盘放入二维码。",
+  copy:"复制", copied:"已复制",
+  ft_releases:"发布", ft_mit:"MIT 许可证",
+  ft_credit:"灵感来自 VS Code 终端 · 基于 xterm.js + node-pty 构建",
+  term:{
+    help:"这个演示把一个 PTY 镜像到两块屏 —— 和真的一样。\n试试:\n  claude \"重构解析器\"\n  htop\n  clear\n  reboot",
+    htop_tail:"  （没错，在沙发上）",
+    claude_1:"⏺ 正在读取 14 个文件，梳理解析器调用图…",
+    claude_2:"⏺ 编辑  src/main/ptyManager.ts  （resize 防护，3 处）",
+    claude_3:"  ⎿  等你审阅 —— 慢慢来，我扛得住断线",
+    reboot:"想得美。这里的会话什么都扛得住 —— 这就是演示本身。",
+    clear:"[回放缓冲已清空]",
+    notfound:c=>`bash: ${c}: 未找到命令（这是演示 —— 试试 'help'）`
+  }
+}};
+
+let LANG = (() => {
+  const saved = localStorage.getItem('ternimal-lang');
+  if (saved === 'en' || saved === 'zh') return saved;
+  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+})();
+
+function applyLang(lang) {
+  LANG = lang;
+  localStorage.setItem('ternimal-lang', lang);
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  document.title = I18N[lang].title;
+  const dict = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const v = dict[el.dataset.i18n];
+    if (v != null) el.innerHTML = v;
+  });
+  document.querySelectorAll('[data-i18n-label]').forEach(el => {
+    const v = dict[el.dataset.i18nLabel];
+    if (v != null && !el.classList.contains('done')) el.textContent = v;
+  });
+  document.getElementById('lede-zh').style.display = lang === 'en' ? '' : 'none';
+  document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+  document.getElementById('lang-zh').classList.toggle('active', lang === 'zh');
+  document.getElementById('lang-en').setAttribute('aria-pressed', lang === 'en');
+  document.getElementById('lang-zh').setAttribute('aria-pressed', lang === 'zh');
+}
+document.getElementById('lang-en').addEventListener('click', () => applyLang('en'));
+document.getElementById('lang-zh').addEventListener('click', () => applyLang('zh'));
+
+/* ------------------------------------------------------------------
+   The mirrored terminal: one PTY-shaped state, two rendered screens.
+   Auto-demo types a session; the visitor's keystrokes take over.
+------------------------------------------------------------------ */
+(() => {
+  const a = document.getElementById('term-a');
+  const b = document.getElementById('term-b');
+  const beam = document.getElementById('beam');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const T = () => I18N[LANG].term;
+
+  const PROMPT = () => ({ html: `<span class="u">you@desk</span><span class="dim">:~$ </span>`, text: 'you@desk:~$ ' });
+  let lines = [];            // {html}
+  let input = '';            // current line being typed
+  let cursorOn = true;
+  let userInput = false;     // visitor took over
+
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const span = (cls, s) => `<span class="${cls}">${esc(s)}</span>`;
+
+  function render() {
+    const cur = cursorOn ? '<span class="cur"></span>' : ' ';
+    const html = lines.map(l => l.html).join('\n') + (lines.length ? '\n' : '') + esc(input) + cur;
+    a.innerHTML = html; b.innerHTML = html;
+    a.scrollTop = a.scrollHeight; b.scrollTop = b.scrollHeight;
+  }
+
+  function out(html) { lines.push({ html }); if (lines.length > 40) lines.shift(); fireBeam(); }
+  function echo(cmd) { const p = PROMPT(); lines.push({ html: p.html + esc(cmd) }); }
+  function fireBeam(){ if (!reduced) { beam.classList.remove('fire'); void beam.offsetWidth; beam.classList.add('fire'); } }
+
+  /* --- the fake responder --- */
+  function run(cmd) {
+    const c = cmd.trim();
+    echo(cmd);
+    if (!c) { render(); return; }
+    const t = T();
+    if (c === 'help') {
+      out(span('c', t.help));
+    } else if (c === 'htop' || c === 'top') {
+      out(span('c','  1  [|||||||||||||||||||||||||||||||   95.2%]  Tasks: 4, 23 thr\n  2  [|||||||||                         28.7%]  Load average: 1.92 0.87 0.42\n  Mem[||||||||||||||||||||     3.21G/7.63G]  Uptime: 00:42:17') + '\n' +
+          span('dim', t.htop_tail));
+    } else if (c.startsWith('claude')) {
+      out(span('c', t.claude_1) + '\n' + span('c', t.claude_2) + '\n' + span('dim', t.claude_3));
+    } else if (c === 'reboot') {
+      out(span('dim', t.reboot));
+    } else if (c === 'clear') {
+      lines = []; out(span('dim', t.clear));
+    } else {
+      out(span('dim', t.notfound(c.split(' ')[0])));
+    }
+    render();
+  }
+
+  /* --- auto demo script --- */
+  const demo = [
+    { t: 700,  type: 'claude "harden the reconnect path"' },
+    { t: 2600, run: true },
+    { t: 3200, type: 'htop' },
+    { t: 2600, run: true },
+  ];
+  async function autoDemo() {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    for (const step of demo) {
+      await sleep(reduced ? 120 : step.t);
+      if (userInput) return;
+      if (step.run) { run(input); input = ''; }
+      else for (const ch of step.type) { if (userInput) return; input += ch; render(); await sleep(reduced ? 4 : 46 + Math.random() * 70); }
+    }
+  }
+
+  /* --- visitor input --- */
+  const isPrintable = e => e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey;
+  function takeover() { if (!userInput) { userInput = true; input = ''; } }
+  a.addEventListener('keydown', e => {
+    takeover();
+    if (e.key === 'Enter')      { e.preventDefault(); run(input); input = ''; }
+    else if (e.key === 'Backspace') { e.preventDefault(); input = input.slice(0, -1); }
+    else if (isPrintable(e))    { e.preventDefault(); input += e.key; }
+    render();
+  });
+  a.addEventListener('click', () => a.focus());
+
+  /* cursor blink independent of rendering */
+  setInterval(() => { cursorOn = !cursorOn; if (userInput) render(); }, 530);
+
+  applyLang(LANG);
+  render();
+  if (!reduced) a.focus({ preventScroll: true });
+  autoDemo();
+})();
+
+/* copy buttons */
+document.querySelectorAll('.copy').forEach(btn => {
+  btn.addEventListener('click', () => {
+    navigator.clipboard?.writeText(btn.dataset.copy).then(() => {
+      btn.textContent = I18N[LANG].copied; btn.classList.add('done');
+      setTimeout(() => { btn.textContent = I18N[LANG].copy; btn.classList.remove('done'); }, 1400);
+    });
+  });
+});
+</script>
+</body>
+</html>
