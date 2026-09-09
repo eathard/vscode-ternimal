@@ -20,7 +20,12 @@ export function mountSoftKeys(app: TerminalApp): HTMLElement {
   const bar = document.createElement('div');
   bar.id = 'softkeys';
   bar.innerHTML = `
-    <button class="sk-handle" title="拖动" aria-label="拖动">⠿</button>
+    <button class="sk-handle" title="拖动" aria-label="拖动">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <ellipse cx="6.2" cy="12" rx="4.4" ry="5.6"/>
+        <rect x="10.6" y="10.8" width="11.6" height="2.4" rx="1.2"/>
+      </svg>
+    </button>
     <button class="sk-mod" data-mod="ctrl">Ctrl</button>
     <button class="sk-mod" data-mod="alt">Alt</button>
     <button class="sk-mod" data-mod="shift">Shift</button>

@@ -255,7 +255,11 @@ try {
     (await page.$('#softkeys')) !== null &&
       (await page.$$('#softkeys .sk-mod')).length === 3 &&
       (await page.$$('#softkeys .sk-direct')).length === 2 &&
-      (await page.$$('#softkeys .sk-arrow')).length === 4
+      (await page.$$('#softkeys .sk-arrow')).length === 4 &&
+      // Anti-mistouch: the spoon handle must be a generous grab zone.
+      (await page.evaluate(
+        `document.querySelector('#softkeys .sk-handle').getBoundingClientRect().width >= 40`
+      ))
   );
   await page.keyboard.type('sleep 30\r');
   await poll(

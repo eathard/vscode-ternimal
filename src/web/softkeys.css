@@ -32,11 +32,29 @@
 }
 
 #softkeys .sk-handle {
-  padding: 8px 6px;
+  /* Generous grab zone: tall as the buttons, wide enough that a thumb
+     lands on the spoon instead of the neighbouring Ctrl key. */
+  min-width: 44px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
-  color: #6a6a6a;
+  color: #7a7a7a;
   cursor: grab;
+  margin-right: 6px;
+  border-radius: 12px;
+}
+
+#softkeys .sk-handle:active {
+  cursor: grabbing;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#softkeys .sk-handle svg {
+  fill: currentColor;
+  pointer-events: none; /* whole button is the drag target, not the glyph */
 }
 
 #softkeys .sk-mod.sk-active {
