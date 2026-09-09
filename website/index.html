@@ -194,6 +194,7 @@ footer .sig{color:var(--phosphor)}
     <a class="plain" href="#pain" data-i18n="nav_why">Why</a>
     <a class="plain" href="#features" data-i18n="nav_features">Features</a>
     <a class="plain" href="#security" data-i18n="nav_security">Security</a>
+    <a class="plain" href="pricing.html" data-i18n="nav_pricing">Pricing</a>
     <a class="plain" href="#install" data-i18n="nav_install">Install</a>
     <div class="lang" role="group" aria-label="language">
       <button id="lang-en" type="button">EN</button>
@@ -336,6 +337,7 @@ footer .sig{color:var(--phosphor)}
         <h2 data-i18n="sec_h2">This serves a shell over the network. On purpose.</h2>
         <p data-i18n="sec_p1">That's the feature and the risk, so the boundary is designed in: HTTPS only, one rotating token per launch (constant-time compare, carried in the URL fragment), certificate fingerprints printed on both ends, per-IP lockout, hardened cookies — and auth lives in memory, so a restart revokes everything.</p>
         <p><strong style="color:var(--paper)" data-i18n="sec_p2s">Keep it on the LAN or behind your VPN.</strong> <span data-i18n="sec_p2">Do not port-forward it to the internet.</span></p>
+        <p style="margin-top:10px" data-i18n="relay_note">Need it from beyond your network? The <a href="pricing.html">zero-knowledge relay</a> goes there without exposing your machine.</p>
       </div>
     </div>
   </div>
@@ -379,7 +381,7 @@ footer .sig{color:var(--phosphor)}
 const I18N = {
 en: {
   title:"Ternimal — Anywhere, the same terminal",
-  nav_why:"Why", nav_features:"Features", nav_security:"Security", nav_install:"Install", nav_download:"↓ Download",
+  nav_why:"Why", nav_features:"Features", nav_security:"Security", nav_pricing:"Pricing", nav_install:"Install", nav_download:"↓ Download",
   kicker:"open source · LAN/VPN by design · no cloud",
   h1a:"Anywhere,", h1b:'the <span class="same">same</span> terminal',
   lede:'Ternimal mirrors your desktop terminal to any browser on your network. Scan a QR code and your phone is attached to <strong>the exact tabs that are already running</strong> — with the scrollback, the agent, and the half-finished command.',
@@ -421,6 +423,7 @@ en: {
   sec_h2:"This serves a shell over the network. On purpose.",
   sec_p1:"That's the feature and the risk, so the boundary is designed in: HTTPS only, one rotating token per launch (constant-time compare, carried in the URL fragment), certificate fingerprints printed on both ends, per-IP lockout, hardened cookies — and auth lives in memory, so a restart revokes everything.",
   sec_p2s:"Keep it on the LAN or behind your VPN.", sec_p2:"Do not port-forward it to the internet.",
+  relay_note:'Need it from beyond your network? The <a href="pricing.html">zero-knowledge relay</a> goes there without exposing your machine.',
   ins_h2:"Two ways in",
   ins_a_h:"<span>a.</span> Download the package", ins_a_p:"Linux AppImage and deb are on every release page:", ins_a_link:"→ releases ↓",
   ins_b_h:"<span>b.</span> Run from source", ins_b_p:"First launch prints the access URL and drops a QR code in the tray.",
@@ -440,7 +443,7 @@ en: {
 },
 zh: {
   title:"Ternimal — 随处可达，同一个终端",
-  nav_why:"为何", nav_features:"特性", nav_security:"安全", nav_install:"安装", nav_download:"↓ 下载",
+  nav_why:"为何", nav_features:"特性", nav_security:"安全", nav_pricing:"价格", nav_install:"安装", nav_download:"↓ 下载",
   kicker:"开源 · 仅内网/VPN · 无云端",
   h1a:"随处可达，", h1b:'<span class="same">同一个</span>终端',
   lede:'Ternimal 把你的桌面终端镜像到网络内的任意浏览器。扫一个二维码，手机就挂载到<strong>正在运行的那组标签</strong>上——连同滚动历史、Agent、和那行没敲完的命令。',
@@ -482,6 +485,7 @@ zh: {
   sec_h2:"它刻意把 shell 搬上网络。",
   sec_p1:"这是功能，也是风险，所以边界是设计的一部分：仅 HTTPS、每次启动一个轮换令牌（恒时比对、经 URL 片段携带）、证书指纹双侧展示、每 IP 锁定、硬化 cookie——鉴权只存内存，重启即吊销一切。",
   sec_p2s:"只在内网或你自己的 VPN 里使用。", sec_p2:"不要端口转发到公网。",
+  relay_note:'需要跨网络访问？<a href="pricing.html">零知识中继</a>在不暴露你机器的前提下抵达任何网络。',
   ins_h2:"两种安装方式",
   ins_a_h:"<span>a.</span> 下载安装包", ins_a_p:"每个 release 页面都提供 Linux AppImage 与 deb：", ins_a_link:"→ 发布页 ↓",
   ins_b_h:"<span>b.</span> 从源码运行", ins_b_p:"首次启动会打印访问 URL，并在托盘放入二维码。",

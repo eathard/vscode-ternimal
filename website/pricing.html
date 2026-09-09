@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ternimal — Relay: beyond the LAN</title>
+<meta name="description" content="The same Ternimal, beyond any network. Zero-knowledge relay: your sessions stay on your machine, the relay only forwards ciphertext. ¥15/month or ¥120/year.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230C0F16'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='18' fill='%23FFB454' text-anchor='middle'%3E%26gt;_%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0C0F16; --panel:#111623; --panel-2:#161D2E; --line:#232C40;
+  --phosphor:#FFB454; --phosphor-dim:#B77F3F; --beam:#5FD4E8;
+  --paper:#E9EEF6; --mist:#96A2B8; --alert:#FF7A6B; --ok:#8CD98C;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Instrument Sans",system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--mist);font-family:var(--sans);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--beam);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+::selection{background:rgba(255,180,84,.28);color:var(--paper)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+nav{position:sticky;top:0;z-index:50;background:rgba(12,15,22,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:22px;height:60px}
+.brand{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:16px}
+.brand b{color:var(--phosphor);font-weight:600}
+nav .spacer{flex:1}
+nav a.plain{color:var(--mist);font-size:14.5px}
+nav a.plain:hover{color:var(--paper);text-decoration:none}
+nav a.plain[aria-current="page"]{color:var(--phosphor)}
+.btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:14px;font-weight:500;padding:9px 18px;border-radius:8px;border:1px solid var(--line);color:var(--paper);background:var(--panel)}
+.btn:hover{border-color:var(--phosphor-dim);text-decoration:none}
+.btn.primary{background:var(--phosphor);border-color:var(--phosphor);color:#1A1206}
+.btn.primary:hover{background:#FFC375;border-color:#FFC375}
+.lang{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.lang button{background:none;border:0;color:var(--mist);font-family:var(--mono);font-size:12.5px;padding:8px 11px;cursor:pointer;transition:color .15s}
+.lang button:hover{color:var(--paper)}
+.lang button.active{background:var(--panel-2);color:var(--phosphor)}
+
+header.hero{padding:80px 0 30px}
+.kicker{font-family:var(--mono);font-size:13.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--beam)}
+html[lang="zh-CN"] .kicker{letter-spacing:.05em}
+h1{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:clamp(30px,5vw,52px);line-height:1.15;letter-spacing:-.03em;margin:18px 0 16px}
+h1 .same{color:var(--phosphor)}
+.lede{max-width:680px;font-size:19px}
+.lede strong{color:var(--paper);font-weight:500}
+html[lang="zh-CN"] .lede{font-size:18px}
+
+section{padding:64px 0 6px}
+.cwd{font-family:var(--mono);font-size:14px;color:var(--phosphor);display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cwd::after{content:"";flex:1;height:1px;background:var(--line)}
+h2{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:clamp(22px,3.2vw,32px);letter-spacing:-.02em;margin-bottom:12px}
+.sub{max-width:680px;margin-bottom:30px}
+
+/* ---- plans ---- */
+.billing{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:0 0 26px}
+.billing button{background:none;border:0;color:var(--mist);font-family:var(--mono);font-size:13px;padding:9px 16px;cursor:pointer}
+.billing button:hover{color:var(--paper)}
+.billing button.active{background:var(--panel-2);color:var(--phosphor)}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-bottom:64px}
+.plan{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:28px;display:flex;flex-direction:column;position:relative;min-width:0}
+.plan.hot{border-color:var(--phosphor-dim);background:rgba(255,180,84,.045)}
+.plan .badge{position:absolute;top:-12px;right:22px;background:var(--phosphor);color:#1A1206;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:3px 11px;border-radius:99px}
+.plan h3{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:19px;margin-bottom:4px}
+.plan .tag{font-size:14.5px;color:var(--mist);margin-bottom:20px}
+.price-row{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.price{font-family:var(--mono);font-weight:600;color:var(--paper);font-size:46px;letter-spacing:-.02em}
+.per{font-family:var(--mono);font-size:14px;color:#5E6B85}
+.save-note{font-family:var(--mono);font-size:12.5px;color:var(--phosphor-dim);min-height:20px;margin-bottom:18px}
+.checks{list-style:none;display:flex;flex-direction:column;gap:9px;font-size:15.5px;margin-bottom:26px}
+.checks li::before{content:"✓ ";color:var(--ok);font-family:var(--mono)}
+.checks li.no::before{content:"— ";color:#5E6B85;font-family:var(--mono)}
+.checks li.no{color:#6B7690}
+.plan .btn{justify-content:center;margin-top:auto}
+
+/* ---- steps ---- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:12px}
+.step{border:1px solid var(--line);border-radius:10px;padding:20px;background:var(--panel)}
+.step .n{font-family:var(--mono);color:var(--beam);font-size:13px;margin-bottom:10px}
+.step h3{font-family:var(--mono);font-size:15.5px;font-weight:600;color:var(--paper);margin-bottom:6px}
+.step p{font-size:14.5px;line-height:1.55}
+.zk-note{font-family:var(--mono);font-size:13px;color:#5E6B85;margin:16px 0 0;max-width:760px}
+.zk-note b{color:var(--beam);font-weight:500}
+
+/* ---- table ---- */
+.tbl-scroll{overflow-x:auto;margin:0 0 64px}
+table{width:100%;border-collapse:collapse;font-size:14.5px;min-width:720px}
+th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:#5E6B85;font-weight:500}
+td:first-child{font-weight:500;color:var(--paper)}
+td{color:var(--mist)}
+.yes{color:var(--ok)} .no{color:var(--alert)} .mut{color:#6B7690}
+.col-us th:nth-child(2){color:var(--phosphor-dim)}
+tbody td:nth-child(2){background:rgba(255,180,84,.045);color:var(--paper)}
+
+/* ---- faq ---- */
+.faq{display:flex;flex-direction:column;gap:18px;max-width:780px;margin-bottom:64px}
+.faq .q{font-family:var(--mono);font-weight:500;color:var(--paper);font-size:15.5px;margin-bottom:6px}
+.faq .q::before{content:"? ";color:var(--beam)}
+.faq .a{font-size:15.5px}
+
+/* ---- cta strip ---- */
+.cta-strip{border:1px solid var(--phosphor-dim);background:rgba(255,180,84,.05);border-radius:14px;padding:30px 32px;display:flex;align-items:center;gap:26px;flex-wrap:wrap;margin-bottom:24px}
+.cta-strip h2{margin-bottom:6px}
+.cta-strip p{max-width:560px}
+.cta-strip .btn{white-space:nowrap}
+
+footer{border-top:1px solid var(--line);padding:36px 0 48px;margin-top:40px}
+footer .wrap{display:flex;align-items:baseline;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:13.5px;color:#5E6B85}
+footer .sig{color:var(--phosphor)}
+
+@media (max-width:880px){
+  .plans{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr}
+  nav .plain{display:none}
+  nav .wrap{gap:12px}
+  .btn{padding:9px 13px}
+}
+:focus-visible{outline:2px solid var(--beam);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html">ternimal<b>&gt;_</b></a>
+    <span class="spacer"></span>
+    <a class="plain" href="index.html#pain" data-i18n="nav_why">Why</a>
+    <a class="plain" href="index.html#features" data-i18n="nav_features">Features</a>
+    <a class="plain" href="index.html#security" data-i18n="nav_security">Security</a>
+    <a class="plain" href="pricing.html" aria-current="page" data-i18n="nav_pricing">Pricing</a>
+    <a class="plain" href="index.html#install" data-i18n="nav_install">Install</a>
+    <div class="lang" role="group" aria-label="language">
+      <button id="lang-en" type="button">EN</button>
+      <button id="lang-zh" type="button">中文</button>
+    </div>
+    <a class="btn primary" href="#plans" data-i18n="nav_cta">Get the relay</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="kicker" data-i18n="kicker">value-added service · zero-knowledge relay</p>
+    <h1 data-i18n="h1">The same terminal, <span class="same">beyond any network</span></h1>
+    <p class="lede" data-i18n="lede">The open-source Ternimal stays LAN/VPN-only — that boundary is part of its security. When you need to reach your sessions from <strong>another network</strong>, the relay takes you there without port-forwarding or a self-run VPN: your sessions never leave your machine, and the relay only ever sees ciphertext.</p>
+  </div>
+</header>
+
+<section id="plans">
+  <div class="wrap">
+    <p class="cwd">~/plans</p>
+    <h2 data-i18n="plans_h2">Pick a door</h2>
+    <p class="sub" data-i18n="plans_sub">Both run the same open-source core. One stops at your network border; the other goes through it.</p>
+
+    <div class="billing" role="group" aria-label="billing period">
+      <button id="bill-m" type="button" aria-pressed="true" data-i18n="bill_m">Monthly</button>
+      <button id="bill-y" type="button" aria-pressed="false" data-i18n="bill_y">Yearly</button>
+    </div>
+
+    <div class="plans">
+      <div class="plan">
+        <h3 data-i18n="os_h">Open source</h3>
+        <p class="tag" data-i18n="os_tag">Self-hosted. Free forever, MIT license.</p>
+        <div class="price-row"><span class="price">¥0</span></div>
+        <p class="save-note">&nbsp;</p>
+        <ul class="checks">
+          <li data-i18n="os_1">Full terminal + multi-tab + WebGL rendering</li>
+          <li data-i18n="os_2">Session mirroring &amp; replay to any LAN/VPN browser</li>
+          <li data-i18n="os_3">QR sign-in, rotating tokens, session kill-switch</li>
+          <li data-i18n="os_4">Mobile soft keyboard (sticky combo keys)</li>
+          <li class="no" data-i18n="os_5">Access from beyond your network — by design</li>
+          <li data-i18n="os_6">Community support via GitHub issues</li>
+        </ul>
+        <a class="btn" href="https://github.com/eathard/vscode-ternimal" target="_blank" rel="noopener" data-i18n="os_cta">View on GitHub</a>
+      </div>
+
+      <div class="plan hot">
+        <span class="badge" data-i18n="relay_badge">RECOMMENDED</span>
+        <h3 data-i18n="relay_h">Relay</h3>
+        <p class="tag" data-i18n="relay_tag">Every open-source feature, plus a path through any network.</p>
+        <div class="price-row"><span class="price" id="price-num">¥15</span><span class="per" id="price-per" data-i18n="per_m">/ month</span></div>
+        <p class="save-note" id="save-note" data-i18n="save_m">&nbsp;</p>
+        <ul class="checks">
+          <li data-i18n="relay_1">Everything in open source</li>
+          <li data-i18n="relay_2">Reach your sessions from any network — no port-forwarding, no VPN to run</li>
+          <li data-i18n="relay_3">Managed TLS certificate (no self-signed warnings)</li>
+          <li data-i18n="relay_4">Zero-knowledge relay — it only ever forwards ciphertext</li>
+          <li data-i18n="relay_5">Multiple devices attached at once, from anywhere</li>
+          <li data-i18n="relay_6">Priority email support</li>
+        </ul>
+        <a class="btn primary" href="https://github.com/eathard/vscode-ternimal/discussions" target="_blank" rel="noopener" data-i18n="relay_cta">Start with relay →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="zk">
+  <div class="wrap">
+    <p class="cwd">~/how-the-relay-works</p>
+    <h2 data-i18n="zk_h2">The relay can't read your terminal</h2>
+    <p class="sub" data-i18n="zk_sub">The same paranoia that made the open-source version LAN-only, applied to going further.</p>
+    <div class="steps">
+      <div class="step"><p class="n">01</p><h3 data-i18n="zk_s1_h">Encrypt at your desk</h3><p data-i18n="zk_s1_p">Your desktop Ternimal encrypts the session stream with a per-launch key before anything leaves the machine.</p></div>
+      <div class="step"><p class="n">02</p><h3 data-i18n="zk_s2_h">Relay forwards ciphertext</h3><p data-i18n="zk_s2_p">The relay routes encrypted packets between your desktop and your devices. It holds no keys and no token — nothing to leak, nothing to subpoena.</p></div>
+      <div class="step"><p class="n">03</p><h3 data-i18n="zk_s3_h">Decrypt on your device</h3><p data-i18n="zk_s3_p">Your phone or browser decrypts locally. Sessions, scrollback and auth still live only on your hardware.</p></div>
+    </div>
+    <p class="zk-note" data-i18n="zk_note"><b>data residency:</b> the relay stores no session content, no scrollback, no credentials — routing metadata only, discarded after connection teardown.</p>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <p class="cwd">~/compare</p>
+    <h2 data-i18n="cmp_h2">Line by line</h2>
+    <div class="tbl-scroll">
+      <table>
+        <thead class="col-us"><tr>
+          <th></th>
+          <th data-i18n="cmp_th_os">Ternimal open source</th>
+          <th data-i18n="cmp_th_relay">Ternimal relay</th>
+        </tr></thead>
+        <tbody>
+          <tr><td data-i18n="r1">LAN / VPN access</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td data-i18n="r2">Beyond your network</td><td class="no">✗ (by design)</td><td class="yes">✓</td></tr>
+          <tr><td data-i18n="r3">No port-forwarding / no VPN to run</td><td class="mut">—</td><td class="yes">✓</td></tr>
+          <tr><td data-i18n="r4">Session mirroring + replay</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td data-i18n="r5">Mobile soft keyboard</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td data-i18n="r6">Token auth · kill-all switch</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td data-i18n="r7">TLS certificate</td><td data-i18n="r7a">self-signed + fingerprint check</td><td data-i18n="r7b">managed CA — no warnings</td></tr>
+          <tr><td data-i18n="r8">Zero-knowledge encryption in transit</td><td class="mut" data-i18n="r8a">TLS to your machine</td><td class="yes" data-i18n="r8b">✓ relay can't read</td></tr>
+          <tr><td data-i18n="r9">Session data lives</td><td data-i18n="r9a">on your machine</td><td data-i18n="r9b">on your machine — always</td></tr>
+          <tr><td data-i18n="r10">Support</td><td data-i18n="r10a">GitHub issues</td><td data-i18n="r10b">priority email</td></tr>
+          <tr><td data-i18n="r11">Price</td><td class="yes" data-i18n="r11a">¥0 · MIT</td><td data-i18n="r11b">¥15 / month · ¥120 / year</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <p class="cwd">~/faq</p>
+    <h2 data-i18n="faq_h2">Asked, answered</h2>
+    <div class="faq">
+      <div><p class="q" data-i18n="q1">Can the relay see my terminal?</p><p class="a" data-i18n="a1">No. The stream is encrypted end-to-end with a per-launch key; the relay routes ciphertext only. Your token never leaves your devices either.</p></div>
+      <div><p class="q" data-i18n="q2">Do I still run the desktop app myself?</p><p class="a" data-i18n="a2">Yes — that's the point. Sessions, scrollback and auth stay on your hardware. The relay is just the road back to them.</p></div>
+      <div><p class="q" data-i18n="q3">What happens to my sessions if the relay is down, or I stop paying?</p><p class="a" data-i18n="a3">Nothing. Sessions live in your desktop Ternimal and keep running; on LAN you're never interrupted. Reconnect later and the replay catches you up.</p></div>
+      <div><p class="q" data-i18n="q4">How do I cancel?</p><p class="a" data-i18n="a4">Any time. When the subscription ends you keep the full open-source version — same binary, same features on your LAN.</p></div>
+    </div>
+
+    <div class="cta-strip">
+      <div>
+        <h2 data-i18n="cta_h">Ready when your sessions are</h2>
+        <p data-i18n="cta_p">One subscription covers all your devices and every desktop you run Ternimal on.</p>
+      </div>
+      <a class="btn primary" href="https://github.com/eathard/vscode-ternimal/discussions" target="_blank" rel="noopener" data-i18n="cta_btn">Start with relay →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span class="sig">ternimal&gt;_</span>
+    <a href="index.html" data-i18n="ft_home">Home</a>
+    <a href="https://github.com/eathard/vscode-ternimal" target="_blank" rel="noopener">GitHub</a>
+    <span data-i18n="ft_mit">MIT license (open-source core)</span>
+    <span style="flex:1"></span>
+    <span data-i18n="ft_credit">the relay forwards ciphertext — nothing else</span>
+  </div>
+</footer>
+
+<script>
+const I18N = {
+en: {
+  title:"Ternimal Relay — beyond the LAN",
+  nav_why:"Why", nav_features:"Features", nav_security:"Security", nav_pricing:"Pricing", nav_install:"Install", nav_cta:"Get the relay",
+  kicker:"value-added service · zero-knowledge relay",
+  h1:'The same terminal, <span class="same">beyond any network</span>',
+  lede:'The open-source Ternimal stays LAN/VPN-only — that boundary is part of its security. When you need to reach your sessions from <strong>another network</strong>, the relay takes you there without port-forwarding or a self-run VPN: your sessions never leave your machine, and the relay only ever sees ciphertext.',
+  plans_h2:"Pick a door",
+  plans_sub:"Both run the same open-source core. One stops at your network border; the other goes through it.",
+  bill_m:"Monthly ¥15", bill_y:"Yearly ¥120",
+  os_h:"Open source", os_tag:"Self-hosted. Free forever, MIT license.",
+  os_1:"Full terminal + multi-tab + WebGL rendering",
+  os_2:"Session mirroring & replay to any LAN/VPN browser",
+  os_3:"QR sign-in, rotating tokens, session kill-switch",
+  os_4:"Mobile soft keyboard (sticky combo keys)",
+  os_5:"Access from beyond your network — by design",
+  os_6:"Community support via GitHub issues",
+  os_cta:"View on GitHub",
+  relay_badge:"RECOMMENDED",
+  relay_h:"Relay", relay_tag:"Every open-source feature, plus a path through any network.",
+  relay_1:"Everything in open source",
+  relay_2:"Reach your sessions from any network — no port-forwarding, no VPN to run",
+  relay_3:"Managed TLS certificate (no self-signed warnings)",
+  relay_4:"Zero-knowledge relay — it only ever forwards ciphertext",
+  relay_5:"Multiple devices attached at once, from anywhere",
+  relay_6:"Priority email support",
+  relay_cta:"Start with relay →",
+  per_m:"/ month", per_y:"/ year",
+  save_m:"billed monthly · cancel anytime",
+  save_y:"save ¥60 a year — ≈ ¥10/month",
+  zk_h2:"The relay can't read your terminal",
+  zk_sub:"The same paranoia that made the open-source version LAN-only, applied to going further.",
+  zk_s1_h:"Encrypt at your desk", zk_s1_p:"Your desktop Ternimal encrypts the session stream with a per-launch key before anything leaves the machine.",
+  zk_s2_h:"Relay forwards ciphertext", zk_s2_p:"The relay routes encrypted packets between your desktop and your devices. It holds no keys and no token — nothing to leak, nothing to subpoena.",
+  zk_s3_h:"Decrypt on your device", zk_s3_p:"Your phone or browser decrypts locally. Sessions, scrollback and auth still live only on your hardware.",
+  zk_note:'<b>data residency:</b> the relay stores no session content, no scrollback, no credentials — routing metadata only, discarded after connection teardown.',
+  cmp_h2:"Line by line",
+  cmp_th_os:"Ternimal open source", cmp_th_relay:"Ternimal relay",
+  r1:"LAN / VPN access", r2:"Beyond your network", r3:"No port-forwarding / no VPN to run",
+  r4:"Session mirroring + replay", r5:"Mobile soft keyboard", r6:"Token auth · kill-all switch",
+  r7:"TLS certificate", r7a:"self-signed + fingerprint check", r7b:"managed CA — no warnings",
+  r8:"Zero-knowledge encryption in transit", r8a:"TLS to your machine", r8b:"✓ relay can't read",
+  r9:"Session data lives", r9a:"on your machine", r9b:"on your machine — always",
+  r10:"Support", r10a:"GitHub issues", r10b:"priority email",
+  r11:"Price", r11a:"¥0 · MIT", r11b:"¥15 / month · ¥120 / year",
+  faq_h2:"Asked, answered",
+  q1:"Can the relay see my terminal?", a1:"No. The stream is encrypted end-to-end with a per-launch key; the relay routes ciphertext only. Your token never leaves your devices either.",
+  q2:"Do I still run the desktop app myself?", a2:"Yes — that's the point. Sessions, scrollback and auth stay on your hardware. The relay is just the road back to them.",
+  q3:"What happens to my sessions if the relay is down, or I stop paying?", a3:"Nothing. Sessions live in your desktop Ternimal and keep running; on LAN you're never interrupted. Reconnect later and the replay catches you up.",
+  q4:"How do I cancel?", a4:"Any time. When the subscription ends you keep the full open-source version — same binary, same features on your LAN.",
+  cta_h:"Ready when your sessions are",
+  cta_p:"One subscription covers all your devices and every desktop you run Ternimal on.",
+  cta_btn:"Start with relay →",
+  ft_home:"Home", ft_mit:"MIT license (open-source core)",
+  ft_credit:"the relay forwards ciphertext — nothing else"
+},
+zh: {
+  title:"Ternimal 中继 —— 跨越局域网",
+  nav_why:"为何", nav_features:"特性", nav_security:"安全", nav_pricing:"价格", nav_install:"安装", nav_cta:"开通中继",
+  kicker:"增值服务 · 零知识中继",
+  h1:'同一个终端，<span class="same">跨越任何网络</span>',
+  lede:'开源版 Ternimal 坚持仅内网/VPN —— 这条边界是安全设计的一部分。当你需要从<strong>其他网络</strong>接回会话，中继替你打通：无需端口转发、无需自建 VPN；会话始终不离开你的机器，中继自始至终只见密文。',
+  plans_h2:"选一扇门",
+  plans_sub:"两者跑的是同一个开源内核。一个止步于你的网络边界，另一个穿过去。",
+  bill_m:"按月 ¥15", bill_y:"按年 ¥120",
+  os_h:"开源版", os_tag:"自托管。永久免费，MIT 许可证。",
+  os_1:"完整终端 + 多标签 + WebGL 渲染",
+  os_2:"会话镜像与回放，覆盖局域网/VPN 内任意浏览器",
+  os_3:"扫码登录、令牌轮换、一键踢出全部会话",
+  os_4:"手机软键盘（粘滞组合键）",
+  os_5:"跨出你的网络 —— 设计上就不行",
+  os_6:"GitHub 社区支持",
+  os_cta:"在 GitHub 查看",
+  relay_badge:"推荐",
+  relay_h:"中继版", relay_tag:"开源版全部能力，外加一条穿过任何网络的路。",
+  relay_1:"开源版的全部功能",
+  relay_2:"任意网络接回会话 —— 免端口转发、免自建 VPN",
+  relay_3:"托管 TLS 证书（告别自签警告）",
+  relay_4:"零知识中继 —— 自始至终只转发密文",
+  relay_5:"多设备同时在线，不限所在地",
+  relay_6:"邮件优先支持",
+  relay_cta:"开通中继 →",
+  per_m:"/ 月", per_y:"/ 年",
+  save_m:"按月计费 · 随时退订",
+  save_y:"年付立省 ¥60 —— 合每月 ¥10",
+  zk_h2:"中继读不到你的终端",
+  zk_sub:"让开源版坚守内网的同一份偏执，用来走得更远。",
+  zk_s1_h:"在你的桌面加密", zk_s1_p:"桌面端 Ternimal 用每次启动生成的密钥加密会话流，任何数据离开你的机器之前就已加密。",
+  zk_s2_h:"中继只转发密文", zk_s2_p:"中继在桌面与你的设备之间转发加密包。它不持有密钥、不持有令牌——没有可泄露的东西，也没有可被调取的东西。",
+  zk_s3_h:"在你的设备解密", zk_s3_p:"手机或浏览器本地解密。会话、滚动历史与凭据仍然只存在于你的硬件上。",
+  zk_note:'<b>数据驻留：</b>中继不存任何会话内容、滚动历史或凭据 —— 仅保留路由元数据，连接断开即丢弃。',
+  cmp_h2:"逐行对比",
+  cmp_th_os:"Ternimal 开源版", cmp_th_relay:"Ternimal 中继版",
+  r1:"局域网 / VPN 访问", r2:"跨网络访问", r3:"免端口转发 / 免自建 VPN",
+  r4:"会话镜像 + 断线回放", r5:"手机软键盘", r6:"令牌认证 · 一键踢出",
+  r7:"TLS 证书", r7a:"自签 + 指纹核对", r7b:"托管 CA —— 无浏览器警告",
+  r8:"传输中的零知识加密", r8a:"TLS 直达你的机器", r8b:"✓ 中继不可读",
+  r9:"会话数据存放于", r9a:"你的机器", r9b:"你的机器 —— 永远",
+  r10:"支持", r10a:"GitHub issues", r10b:"邮件优先",
+  r11:"价格", r11a:"¥0 · MIT", r11b:"¥15 / 月 · ¥120 / 年",
+  faq_h2:"常问常答",
+  q1:"中继能看到我的终端内容吗？", a1:"不能。会话流以每次启动的密钥端到端加密，中继只转发密文；令牌也从不离开你的设备。",
+  q2:"还需要自己跑桌面端吗？", a2:"需要 —— 这正是重点。会话、滚动历史与凭据都留在你的硬件上，中继只是回去的路。",
+  q3:"中继挂了或我停止付费，会话会丢吗？", a3:"不会。会话活在你的桌面 Ternimal 里继续运行；在局域网内你永远不受影响。之后重连，回放会补齐你错过的内容。",
+  q4:"如何退订？", a4:"随时可退。订阅结束后你继续拥有完整的开源版 —— 同一个程序，局域网内功能一切照旧。",
+  cta_h:"会话就绪，你随时可以",
+  cta_p:"一份订阅覆盖你的所有设备，以及运行 Ternimal 的每一台桌面机。",
+  cta_btn:"开通中继 →",
+  ft_home:"首页", ft_mit:"MIT 许可证（开源内核）",
+  ft_credit:"中继只转发密文 —— 仅此而已"
+}};
+
+let LANG = (() => {
+  const saved = localStorage.getItem('ternimal-lang');
+  if (saved === 'en' || saved === 'zh') return saved;
+  return navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+})();
+
+function applyLang(lang) {
+  LANG = lang;
+  localStorage.setItem('ternimal-lang', lang);
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  document.title = I18N[lang].title;
+  const dict = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const v = dict[el.dataset.i18n];
+    if (v != null) el.innerHTML = v;
+  });
+  document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+  document.getElementById('lang-zh').classList.toggle('active', lang === 'zh');
+  document.getElementById('lang-en').setAttribute('aria-pressed', lang === 'en');
+  document.getElementById('lang-zh').setAttribute('aria-pressed', lang === 'zh');
+  renderBilling();
+}
+document.getElementById('lang-en').addEventListener('click', () => applyLang('en'));
+document.getElementById('lang-zh').addEventListener('click', () => applyLang('zh'));
+
+/* billing period toggle */
+let PERIOD = 'm';
+const $ = id => document.getElementById(id);
+function renderBilling() {
+  const d = I18N[LANG];
+  $('price-num').textContent = PERIOD === 'm' ? '¥15' : '¥120';
+  $('price-per').textContent = PERIOD === 'm' ? d.per_m : d.per_y;
+  $('save-note').textContent = PERIOD === 'm' ? d.save_m : d.save_y;
+  $('bill-m').classList.toggle('active', PERIOD === 'm');
+  $('bill-y').classList.toggle('active', PERIOD === 'y');
+  $('bill-m').setAttribute('aria-pressed', PERIOD === 'm');
+  $('bill-y').setAttribute('aria-pressed', PERIOD === 'y');
+}
+$('bill-m').addEventListener('click', () => { PERIOD = 'm'; renderBilling(); });
+$('bill-y').addEventListener('click', () => { PERIOD = 'y'; renderBilling(); });
+
+applyLang(LANG);
+</script>
+</body>
+</html>
