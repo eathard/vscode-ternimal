@@ -202,7 +202,7 @@ function accessInfoHtml(info: {
 <body>
   <h1>${t(L, 'info.heading')}</h1>
   <div class="qr">${qr}</div>
-  <div class="tip">${t(L, 'info.tip').replace('\n', '<br>')}</div>
+  <div class="tip">${t(L, 'info.tip').split('\n').join('<br>')}</div>
   <div class="row"><b>${t(L, 'info.url')}</b><code>${info.url}</code></div>
   <div class="row"><b>${t(L, 'info.token')}</b><code>${info.token}</code></div>
   <div class="row"><b>${t(L, 'info.fp')}</b><code>${info.fingerprint}</code></div>

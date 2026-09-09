@@ -322,6 +322,57 @@ try {
   check('one-shot reset: next keystroke arrives unmodified (no ^X)', plainX === 'y');
   await page.keyboard.type('\x15'); // Ctrl+U: clear the pending line (pure input, no assertion)
 
+  // 7.6 Soft-keyboard widget quality bar: position stability, drag
+  //     persistence, and combo-clearing on tab switch.
+  const rectBefore = await page.evaluate(
+    `JSON.stringify((r => [r.left, r.top, r.width, r.height])(document.querySelector('#softkeys').getBoundingClientRect()))`
+  );
+  await page.click('#softkeys .sk-mod[data-mod=ctrl]'); // tap WITHOUT drag
+  await sleep(150);
+  const rectAfter = await page.evaluate(
+    `JSON.stringify((r => [r.left, r.top, r.width, r.height])(document.querySelector('#softkeys').getBoundingClientRect()))`
+  );
+  check('softkey tap does not move the bar (transform-drop regression)', rectBefore === rectAfter);
+
+  // Synthetic drag on the handle -> position saved + applied.
+  const dragged = await page.evaluate(() => {
+    const bar = document.querySelector('#softkeys');
+    const before = JSON.parse(JSON.stringify({ x: bar.offsetLeft, y: bar.offsetTop }));
+    const r = bar.getBoundingClientRect();
+    const opts = { bubbles: true, cancelable: true, pointerId: 7, isPrimary: true };
+    const handle = bar.querySelector('.sk-handle');
+    handle.dispatchEvent(new PointerEvent('pointerdown', { ...opts, clientX: r.left + 10, clientY: r.top + 10 }));
+    bar.dispatchEvent(new PointerEvent('pointermove', { ...opts, clientX: r.left - 80, clientY: r.top - 60 }));
+    bar.dispatchEvent(new PointerEvent('pointerup', opts));
+    const after = { x: bar.offsetLeft, y: bar.offsetTop };
+    const saved = JSON.parse(localStorage.getItem('ternimal-softkeys-pos') || 'null');
+    return { before, after, saved, moved: after.x !== before.x || after.y !== before.y };
+  });
+  check(
+    'softkey drag moves bar and persists position to localStorage',
+    dragged.moved && dragged.saved && dragged.saved.x === dragged.after.x && dragged.saved.y === dragged.after.y
+  );
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await sleep(1500);
+  const restored = await page.evaluate(
+    `(() => { const b = document.querySelector('#softkeys'); const s = JSON.parse(localStorage.getItem('ternimal-softkeys-pos')); return s && Math.abs(b.offsetLeft - s.x) <= 1 && Math.abs(b.offsetTop - s.y) <= 1; })()`
+  );
+  check('softkey position restored after reload from localStorage', restored === true);
+
+  // Pending combo must not survive a tab switch (one-shot belongs to
+  // the tab the user is looking at).
+  await page.click('#softkeys .sk-mod[data-mod=alt]');
+  const altLit = await page.evaluate(
+    `document.querySelector('#softkeys .sk-mod[data-mod=alt]').classList.contains('sk-active')`
+  );
+  await page.keyboard.down('Control'); await page.keyboard.press('Tab'); await page.keyboard.up('Control');
+  await sleep(400);
+  const altCleared = await page.evaluate(
+    `!document.querySelector('#softkeys .sk-mod[data-mod=alt]').classList.contains('sk-active')`
+  );
+  check('pending combo cleared on tab switch', altLit === true && altCleared === true);
+
+
   // 8. Reload regression: a page refresh must RESTORE sessions, never
   //    spawn a new one (listTabs used to resolve from an empty cache while
   //    the socket was still connecting). Also: seed a stale DA query in

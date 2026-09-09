@@ -76,6 +76,22 @@ verify-reconnect.mjs 场景（TC-M4-05/08 核心，真传输类）：
 二维码。`/login` 保留为 GET 别名。测试全部随迁：verify:m3 31 项、
 smoke、browser-e2e（新增"QR 式片段 URL 自动登录"用例，13/13 ×N）。
 
+## 10. 补遗：交付标准代码质量审计
+
+按交付标准对代码质量做了一轮严格审计：
+- **编译门槛升级**：tsconfig 在 strict 之上加 `noUnusedLocals` /
+  `noUnusedParameters` / `noImplicitOverride` / `noFallthroughCasesInSwitch`，
+  清除 1 处未用导入（remoteServer `SESSION_COOKIE`）后全库零错误
+- **真缺陷修复**：悬浮条默认居中靠 `translateX(-50%)`，此前"首次点击/首次
+  resize 直接去 transform"会把条向右弹半宽 —— 现先按视觉矩形换算布局坐标再
+  去 transform（e2e 加回归：点击后位置逐位不变）
+- **健壮性**：`setPointerCapture` 包 try/catch（合成指针不可捕获时拖拽仍
+  经冒泡生效）；二维码窗口提示换行改 split/join（原 replace 只处理首个 \n）
+- **噪音清零**：鉴权页补 `<link rel=icon data:,>`，消除浏览器自动请求
+  `/favicon.ico` 的 404 控制台噪音
+- **e2e 17→21**：+悬浮条位置稳定 / 拖动落 localStorage / 重载恢复 /
+  切标签清粘滞组合键
+
 ## 9. 补遗：Web 端软键盘（Ctrl/Alt/Shift 组合键，用户需求迭代）
 
 移动端无法发送组合键 → 可拖动悬浮条（Ctrl/Alt/Shift 粘滞开关 +

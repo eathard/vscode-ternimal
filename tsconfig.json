@@ -2,7 +2,10 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -12,8 +15,18 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "vscode-src"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "vscode-src"
+  ]
 }

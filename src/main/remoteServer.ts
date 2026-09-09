@@ -20,7 +20,7 @@ import { URL } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { SessionRegistry } from './sessionRegistry';
 import { t, Locale, detectLocale } from '../shared/i18n';
-import { AuthManager, SESSION_COOKIE } from './authManager';
+import { AuthManager } from './authManager';
 import type { SessionInfo, DataPayload, ExitPayload, TitlePayload } from '../shared/ipcChannels';
 import {
   WS,
@@ -513,6 +513,7 @@ function authPageHtml(locale: Locale, fingerprint: string, badToken: boolean, lo
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" href="data:,">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${t(L, 'auth.title')}</title>
 <style>

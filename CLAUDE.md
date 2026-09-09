@@ -16,11 +16,14 @@ npm run build:renderer # Build renderer process only
 npm run rebuild      # electron-rebuild — REQUIRED after installing/upgrading Electron or node-pty (native module)
 npm run pack         # Build + electron-builder for Windows and Linux
 npm run pack:linux   # Build + Linux packages (AppImage + deb)
-npm run verify:m1|m3|m4|browser   # Milestone verification suites (exit 0/1)
+npm run verify                # umbrella: m1+m3+m4+softkeys (exit 0/1)
+npm run verify:m1|m3|m4|browser|softkeys  # individual suites
 node scripts/smoke-e2e.mjs        # Real Electron + real bash + TLS e2e
 ```
 
-No linter. Verification is script-based (`N/M passed`, exit code 0/1) — see
+No linter — the quality gates are `tsc --noEmit` (strict + noUnusedLocals/
+noUnusedParameters/noImplicitOverride/noFallthroughCasesInSwitch) and the
+script suites (`N/M passed`, exit code 0/1) — see
 `docs/verification-standard.md`. Run the full matrix when touching the
 transport seam, registry, or remote server.
 

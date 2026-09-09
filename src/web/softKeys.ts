@@ -82,7 +82,12 @@ export function mountSoftKeys(app: TerminalApp): HTMLElement {
     const rect = bar.getBoundingClientRect();
     offX = e.clientX - rect.left;
     offY = e.clientY - rect.top;
-    bar.setPointerCapture(e.pointerId);
+    try {
+      bar.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic/testing pointers may not be capturable — drag still
+      // works via bubbling listeners on the bar.
+    }
     e.preventDefault();
   };
   (bar.querySelector('.sk-handle') as HTMLButtonElement).addEventListener(
@@ -152,13 +157,20 @@ export function mountSoftKeys(app: TerminalApp): HTMLElement {
     }
   }
   restorePos();
-  // Dragging switches to explicit coords — drop the centering transform.
-  bar.addEventListener('pointerdown', () => {
+  // Dropping the centering transform must first convert the VISUAL
+  // position (rect includes the translateX) into layout coords —
+  // otherwise the bar jumps right by half its width.
+  const dropTransform = (): void => {
+    if (bar.style.transform === 'none') return;
+    const r = bar.getBoundingClientRect();
     bar.style.transform = 'none';
-  }, { once: true });
+    positionBar(r.left, r.top);
+  };
+  bar.addEventListener('pointerdown', dropTransform, { once: true });
   window.addEventListener('resize', () => {
-    positionBar(bar.offsetLeft, bar.offsetTop); // re-clamp into viewport
-    if (bar.style.transform !== 'none') bar.style.transform = 'none';
+    const r = bar.getBoundingClientRect();
+    bar.style.transform = 'none';
+    positionBar(r.left, r.top); // re-clamp into viewport
   });
 
   // ---- safety: never leak a pending combo across focus/visibility loss ----
