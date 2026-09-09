@@ -3,7 +3,7 @@
 //   AuthManager   — scrypt verify, cookie issuance/attributes, session
 //                   lifecycle (sliding TTL), per-IP rate limiter semantics
 //                   (5 failures/minute → 1-minute lock, window reset),
-//                   password rotation invalidating sessions
+//                   token rotation invalidating sessions
 //   CertManager   — generation, on-disk reuse with stable fingerprint,
 //                   key file permissions, X.509 shape (CN/SAN/dates)
 //   ConfigStore   — defaults, persistence round-trip, atomic write
@@ -23,7 +23,7 @@ execSync(
     '--skipLibCheck --moduleResolution node',
   { cwd: root, stdio: 'inherit' }
 );
-const { AuthManager, hashPassword, generatePassword } = await import(
+const { AuthManager, generateAccessToken } = await import(
   pathToFileURL(path.join(root, 'dist/verify/main/authManager.js')).href
 );
 const { ensureCertificate, fingerprintPem } = await import(
@@ -38,34 +38,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
-// ---- password primitives ----
+// ---- token primitives ----
 
-test('hashPassword format: scrypt$salt$hash, 32-byte hex parts', () => {
-  const h = hashPassword('hunter2');
-  const parts = h.split('$');
-  assert.equal(parts.length, 3);
-  assert.equal(parts[0], 'scrypt');
-  assert.match(parts[1], /^[0-9a-f]{32}$/);
-  assert.match(parts[2], /^[0-9a-f]{128}$/); // 64 bytes
-});
-
-test('generatePassword: 12 chars from the reduced alphabet, no lookalikes', () => {
+test('generateAccessToken: 32 URL-safe chars (192 bits), unique', () => {
+  const seen = new Set();
   for (let i = 0; i < 50; i++) {
-    const pw = generatePassword();
-    assert.equal(pw.length, 12);
-    assert.doesNotMatch(pw, /[O0lI1]/, 'no ambiguous characters');
+    const t = generateAccessToken();
+    assert.equal(t.length, 32);
+    assert.match(t, /^[A-Za-z0-9_-]+$/, 'URL-safe alphabet');
+    seen.add(t);
   }
+  assert.equal(seen.size, 50, 'no collisions');
 });
 
 // ---- AuthManager: verify + cookie ----
 
-test('login: wrong password 401, right password 303 + hardened cookie', () => {
-  const auth = new AuthManager({ passwordHash: hashPassword('s3cret!') });
+test('login: wrong token 401, right token 303 + hardened cookie', () => {
+  const auth = new AuthManager({ accessToken: 's3cret-token-32-chars-aaaa' });
   const bad = auth.login('1.2.3.4', 'nope');
   assert.equal(bad.ok, false);
   assert.equal(bad.status, 401);
+  assert.equal(auth.login('1.2.3.4', 's3cret-token-32-chars-aaab').status, 401, 'near-miss length-equal token rejected');
 
-  const good = auth.login('1.2.3.4', 's3cret!');
+  const good = auth.login('1.2.3.4', 's3cret-token-32-chars-aaaa');
   assert.equal(good.status, 303);
   assert.ok(good.cookie);
   for (const attr of ['HttpOnly', 'Secure', 'SameSite=Strict', 'Path=/', 'Max-Age=']) {
@@ -75,16 +70,18 @@ test('login: wrong password 401, right password 303 + hardened cookie', () => {
   assert.equal(token.length, 64, '256-bit token');
 });
 
-test('verify path is tamper-resistant: garbage hash never validates', () => {
-  const auth = new AuthManager({ passwordHash: 'garbage$$' });
-  assert.equal(auth.login('9.9.9.9', 'anything').status, 401);
+test('verify path is safe: empty/malformed tokens never validate', () => {
+  const auth = new AuthManager({ accessToken: 'x'.repeat(32) });
+  assert.equal(auth.login('9.9.9.9', '').status, 401);
+  assert.equal(auth.login('9.9.9.9', 'undefined').status, 401);
+  assert.equal(new AuthManager().getToken().length, 32, 'generated when not provided');
 });
 
 // ---- sessions ----
 
 test('tokenFromCookieHeader: extracts ours from a multi-cookie header', () => {
-  const auth = new AuthManager({ passwordHash: hashPassword('x') });
-  const r = auth.login('1.1.1.1', 'x');
+  const auth = new AuthManager({ accessToken: 'x-token-x-token-x-token-x-token' });
+  const r = auth.login('1.1.1.1', 'x-token-x-token-x-token-x-token');
   const token = /ternimal_session=([0-9a-f]+)/.exec(r.cookie)[1];
   assert.equal(
     auth.tokenFromCookieHeader(`a=b; ternimal_session=${token}; c=d`),
@@ -95,8 +92,8 @@ test('tokenFromCookieHeader: extracts ours from a multi-cookie header', () => {
 });
 
 test('session lifecycle: unknown rejected, expiry enforced, sliding refresh works', async () => {
-  const auth = new AuthManager({ passwordHash: hashPassword('x'), sessionTtlMs: 120 });
-  const { cookie } = auth.login('2.2.2.2', 'x');
+  const auth = new AuthManager({ accessToken: 'x-token-x-token-x-token-x-token', sessionTtlMs: 120 });
+  const { cookie } = auth.login('2.2.2.2', 'x-token-x-token-x-token-x-token');
   const token = /ternimal_session=([0-9a-f]+)/.exec(cookie)[1];
 
   assert.equal(auth.isValidSession(token), true);
@@ -115,9 +112,9 @@ test('session lifecycle: unknown rejected, expiry enforced, sliding refresh work
 
 // ---- rate limiter ----
 
-test('rate limit: 5 failures lock for lockMs; correct password 429 while locked; unlock after', async () => {
+test('rate limit: 5 failures lock for lockMs; correct token 429 while locked; unlock after', async () => {
   const auth = new AuthManager({
-    passwordHash: hashPassword('right'),
+    accessToken: 'right-token-32-chars-abcdefghij',
     windowMs: 10_000,
     lockMs: 80,
     maxFailures: 5,
@@ -128,18 +125,18 @@ test('rate limit: 5 failures lock for lockMs; correct password 429 while locked;
   }
   assert.equal(auth.isLocked('3.3.3.3'), true);
 
-  const during = auth.login('3.3.3.3', 'right');
+  const during = auth.login('3.3.3.3', 'right-token-32-chars-abcdefghij');
   assert.equal(during.status, 429);
   assert.ok(during.retryAfterMs > 0);
 
   await sleep(100); // lockMs=80
   assert.equal(auth.isLocked('3.3.3.3'), false);
-  assert.equal(auth.login('3.3.3.3', 'right').status, 303);
+  assert.equal(auth.login('3.3.3.3', 'right-token-32-chars-abcdefghij').status, 303);
 });
 
 test('rate limit window: failures spread beyond windowMs never accumulate to a lock', async () => {
   const auth = new AuthManager({
-    passwordHash: hashPassword('right'),
+    accessToken: 'right-token-32-chars-abcdefghij',
     windowMs: 60,
     lockMs: 1000,
     maxFailures: 5,
@@ -149,19 +146,19 @@ test('rate limit window: failures spread beyond windowMs never accumulate to a l
     await sleep(25); // window slides past before 5th failure
   }
   assert.equal(auth.isLocked('4.4.4.4'), false);
-  assert.equal(auth.login('4.4.4.4', 'right').status, 303, 'not locked, success fine');
+  assert.equal(auth.login('4.4.4.4', 'right-token-32-chars-abcdefghij').status, 303, 'not locked, success fine');
 });
 
 test('successful login resets the failure window for that IP', () => {
   const auth = new AuthManager({
-    passwordHash: hashPassword('right'),
+    accessToken: 'right-token-32-chars-abcdefghij',
     windowMs: 10_000,
     lockMs: 1000,
     maxFailures: 3,
   });
   auth.login('5.5.5.5', 'wrong');
   auth.login('5.5.5.5', 'wrong');
-  auth.login('5.5.5.5', 'right'); // reset
+  auth.login('5.5.5.5', 'right-token-32-chars-abcdefghij'); // reset
   auth.login('5.5.5.5', 'wrong');
   auth.login('5.5.5.5', 'wrong');
   assert.equal(auth.isLocked('5.5.5.5'), false, 'count restarted after success');
@@ -169,7 +166,7 @@ test('successful login resets the failure window for that IP', () => {
 
 test('rate limiting is per-IP', () => {
   const auth = new AuthManager({
-    passwordHash: hashPassword('right'),
+    accessToken: 'right-token-32-chars-abcdefghij',
     windowMs: 10_000,
     lockMs: 1000,
     maxFailures: 2,
@@ -178,21 +175,23 @@ test('rate limiting is per-IP', () => {
   auth.login('6.6.6.6', 'wrong');
   assert.equal(auth.isLocked('6.6.6.6'), true);
   assert.equal(auth.isLocked('7.7.7.7'), false);
-  assert.equal(auth.login('7.7.7.7', 'right').status, 303);
+  assert.equal(auth.login('7.7.7.7', 'right-token-32-chars-abcdefghij').status, 303);
 });
 
-// ---- password rotation ----
+// ---- token rotation ----
 
-test('resetPassword: new password works, every old session dies (TC-M3-08 core)', () => {
-  const auth = new AuthManager({ passwordHash: hashPassword('old') });
-  const { cookie } = auth.login('8.8.8.8', 'old');
+test('rotateToken: new token works, every old session dies (TC-M3-08 core)', () => {
+  const auth = new AuthManager({ accessToken: 'old-token-32-chars-aaaaaaaaaa' });
+  const { cookie } = auth.login('8.8.8.8', 'old-token-32-chars-aaaaaaaaaa');
   const token = /ternimal_session=([0-9a-f]+)/.exec(cookie)[1];
   assert.equal(auth.isValidSession(token), true);
 
-  const next = auth.resetPassword();
+  const next = auth.rotateToken();
+  assert.equal(next.length, 32, 'new token is a full token');
+  assert.notEqual(next, 'old-token-32-chars-aaaaaaaaaa');
   assert.equal(auth.isValidSession(token), false, 'old session invalidated');
-  assert.equal(auth.login('8.8.8.8', 'old').status, 401, 'old password dead');
-  assert.equal(auth.login('8.8.8.8', next).status, 303, 'new password live');
+  assert.equal(auth.login('8.8.8.8', 'old-token-32-chars-aaaaaaaaaa').status, 401, 'old token dead');
+  assert.equal(auth.login('8.8.8.8', next).status, 303, 'new token live');
 });
 
 // ---- CertManager ----

@@ -37,13 +37,13 @@ renderer (xterm.js)                  main (node-pty)
 On top of that, a remote layer serves the SAME sessions to browsers
 (LAN/VPN, self-signed TLS): `SessionRegistry` (main, EventEmitter, single
 source of truth) feeds both the local IPC path and `remoteServer.ts`
-(HTTPS + password login + WSS `/ws`; JSON protocol in
+(HTTPS + dynamic access-token auth + WSS `/ws`; JSON protocol in
 `src/shared/wsProtocol.ts`). Renderer clients talk through the
 `TerminalTransport` seam (`src/renderer/transport/`):
 `LocalIpcTransport` for the Electron window, `WebSocketTransport` for the
 web bundle (`src/web/`, built by `webpack.web.config.js`). Sessions survive
 client disconnects — ring-buffer replay on attach. Supporting modules:
-`authManager.ts` (scrypt + rate limit), `certManager.ts` (self-signed with
+`authManager.ts` (per-launch token + rate limit; tray shows QR), `certManager.ts` (self-signed with
 LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 
 ### Data flow (core concept)

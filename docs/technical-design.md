@@ -26,7 +26,8 @@
 │  │ Web UI（同一套组件）   │             │  ┌──────────▼───────────────────┐      │ │
 │  │  WebSocketTransport ─┼──HTTPS/WSS──►│  │ RemoteServer                 │      │ │
 │  └──────────────────────┘             │  │  ├ 静态资源 dist/web          │      │ │
-│                                       │  │  ├ /login 密码认证（M3）      │      │ │
+│                                       │  │  ├ /auth 令牌认证（M3，/login  │      │ │
+│                                       │  │  │   为 GET 别名）+ 二维码扫码     │      │ │
 │                                       │  │  └ /ws 会话流 + 心跳 + 限速   │      │ │
 │                                       │  └──────────────────────────────┘      │ │
 │                                       └────────────────────────────────────────┘ │
@@ -206,7 +207,7 @@ export interface TerminalTransport {
 export class RemoteServer {
   constructor(opts: {
     registry: SessionRegistry;
-    config: ConfigStore;          // 端口/绑定地址/证书/密码哈希/缓冲上限
+    config: ConfigStore;          // 端口/绑定地址/证书/缓冲上限
     webRoot: string;              // dist/web 静态目录
   });
   start(): Promise<{ port: number; certFingerprint: string }>;
@@ -221,7 +222,9 @@ export class RemoteServer {
   - `GET /` → `index.html`（Web 终端页面）
   - `GET /static/*` → dist/web 静态文件（Content-Type 白名单 + 路径穿越
     防护：resolve 后必须仍在 webRoot 内）
-  - `GET /login` → 登录页；`POST /login` → 密码校验
+  - `GET /auth`（`/login` 为别名）→ 鉴权页；`POST /auth` → 令牌校验。
+    页面 JS 自动读取 URL 片段 `#T=<token>` 换取会话 cookie 并抹除片段
+    （托盘二维码/复制的链接即此形态；片段不进服务器日志）。
   - `GET /health` → 200（无敏感信息，供内网探活）
 - **WS 层**（`ws` 库，挂 `/ws` 路径）：
   - upgrade 前校验会话 cookie，未认证直接拒绝握手（返回 401）
@@ -275,7 +278,8 @@ JSON 文本帧，统一信封 `{ "type": "...", ... }`。字段与 IPC payload
   新增托盘图标 + 菜单：
   - `显示窗口` → 无则 `createWindow()`（启动时 `listTabs` 恢复标签）
   - `复制访问地址` → `https://<LAN-IP>:<port>` 写入剪贴板
-  - `查看/重置访问密码` → 重置后立即失效全部会话 cookie
+  - `查看访问信息（二维码）` → QR 窗口（URL/令牌/证书指纹）；
+    `重置访问令牌` → 重置后立即失效全部会话 cookie 并弹出新二维码
   - `退出` → `registry.killAll()` + `app.quit()`（唯一正常退出路径）
 - `before-quit` 保留 `killAll()`；托盘退出走同一函数，语义收敛。
 - 图标复用现有打包图标资源（项目已含 png-to-ico 流程）。
@@ -288,14 +292,16 @@ JSON 文本帧，统一信封 `{ "type": "...", ... }`。字段与 IPC payload
 {
   "port": 8443,
   "bind": "0.0.0.0",            // 可改 127.0.0.1 或内网具体 IP
-  "passwordHash": "<scrypt>",    // 首启随机生成 12 位密码并托盘展示
+  "accessToken": 不落盘，           // 每次启动随机生成（192bit），托盘展示/轮换
   "certPath": "",                // 空 = userData/certs/ 自签
   "replayBufferBytes": 1048576,  // 每会话环形缓冲上限
   "maxSessions": 16
 }
 ```
 
-密码哈希：Node `crypto.scrypt`（salt 16B，N=16384），不引第三方依赖。
+访问令牌：`crypto.randomBytes(24).toString('base64url')`（192bit，每次启动
+轮换；`TERNIMAL_TOKEN` 环境变量可覆盖，用于测试/恢复）。比对用
+`timingSafeEqual`（长度不等直接拒绝）。会话 cookie 机制不变。
 改配置需重启应用生效（一期不做热加载）。
 
 ### 2.9 证书方案（M3）
@@ -364,14 +370,14 @@ JSON 文本帧，统一信封 `{ "type": "...", ... }`。字段与 IPC payload
 | 层面 | 措施 |
 |------|------|
 | 传输 | 全站 TLS（自签），无明文 HTTP 数据面；`/health` 亦走 TLS |
-| 认证 | 单密码（scrypt 存储）；httpOnly+Secure+SameSite=Strict cookie；WS upgrade 复验 |
-| 暴露面 | 默认内网/VPN；`bind` 可收紧到具体接口；密码重置即吊销全部会话 |
+| 认证 | 动态访问令牌（每启动轮换 192bit；扫码/链接免输入）；httpOnly+Secure+SameSite=Strict cookie；WS upgrade 复验 |
+| 暴露面 | 默认内网/VPN；`bind` 可收紧到具体接口；令牌轮换即吊销全部会话 |
 | 防爆破 | 5 次/分/IP 失败锁定 1 分钟 |
 | Web 安全 | 静态服务路径穿越防护；CSP 限制 connect-src；无内嵌第三方资源 |
 | 审计 | 一期仅进程日志（登录成功/失败、客户端连接/断开、标签创建/关闭）；结构化审计二期 |
 
 **明示的剩余风险**（与需求规格 §7 一致）：远程控制终端本质等于远程
-代码执行，安全边界 = 密码 + 网络边界（内网/VPN），不得直接暴露公网。
+代码执行，安全边界 = 令牌 + 网络边界（内网/VPN），不得直接暴露公网。
 
 ## 6. 边界与错误处理
 

@@ -144,7 +144,7 @@ export class RemoteServer {
         this.actualPort = (this.server!.address() as import('net').AddressInfo).port;
         // eslint-disable-next-line no-console
         console.warn(
-          `[Ternimal] RemoteServer (HTTPS, password-auth) listening on ` +
+          `[Ternimal] RemoteServer (HTTPS, token-auth) listening on ` +
             `https://${this.host}:${this.actualPort} — LAN/VPN only.`
         );
         this.startHeartbeat();
@@ -190,24 +190,25 @@ export class RemoteServer {
       this.auth.tokenFromCookieHeader(req.headers.cookie)
     );
 
-    // Open routes: health probe + login page/submit. Everything else gated.
+    // Open routes: health probe + auth page/submit. Everything else gated.
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
       return;
     }
 
-    if (url.pathname === '/login') {
+    // /login is kept as a GET alias (bookmarks); the POST target is /auth.
+    if (url.pathname === '/login' || url.pathname === '/auth') {
       if (req.method === 'GET' || req.method === 'HEAD') {
-        const badPassword = url.searchParams.get('e') === '1';
+        const badToken = url.searchParams.get('e') === '1';
         const locked = this.auth.isLocked(ip);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(loginPageHtml(this.certFingerprint, badPassword, locked));
+        res.end(authPageHtml(this.certFingerprint, badToken, locked));
         return;
       }
       if (req.method === 'POST') {
         const body = await this.readBody(req);
-        const password = new URLSearchParams(body).get('password') ?? '';
-        const result = this.auth.login(ip, password);
+        const token = new URLSearchParams(body).get('token') ?? '';
+        const result = this.auth.login(ip, token);
         if (result.ok && result.cookie) {
           res.writeHead(303, { 'Set-Cookie': result.cookie, Location: '/' }).end();
         } else if (result.status === 429) {
@@ -496,8 +497,11 @@ export class RemoteServer {
   }
 }
 
-/** Self-contained login page (no external assets; CSP-friendly). */
-function loginPageHtml(fingerprint: string, badPassword: boolean, locked: boolean): string {
+/** Self-contained auth page (no external assets; CSP-friendly).
+ *  Auto-exchanges the URL fragment "#T=<token>" (from the tray QR code /
+ *  copied access link — the fragment never reaches the server) for a
+ *  session cookie, then relocates to /. Manual paste kept as fallback. */
+function authPageHtml(fingerprint: string, badToken: boolean, locked: boolean): string {
   const fp = fingerprint || '(unavailable)';
   return `<!DOCTYPE html>
 <html lang="en">
@@ -511,7 +515,7 @@ function loginPageHtml(fingerprint: string, badPassword: boolean, locked: boolea
   .card { background:#252526; padding:32px; border-radius:8px; width:320px;
           box-shadow:0 4px 24px rgba(0,0,0,.5); }
   h1 { font-size:18px; margin:0 0 20px; }
-  input[type=password] { width:100%; box-sizing:border-box; padding:10px; border-radius:4px;
+  input[type=text] { width:100%; box-sizing:border-box; padding:10px; border-radius:4px;
           border:1px solid #3c3c3c; background:#1e1e1e; color:#d4d4d4; font-size:15px; }
   button { width:100%; margin-top:12px; padding:10px; border:0; border-radius:4px;
            background:#0e639c; color:#fff; font-size:15px; cursor:pointer; }
@@ -519,16 +523,31 @@ function loginPageHtml(fingerprint: string, badPassword: boolean, locked: boolea
   .err { color:#f48771; font-size:13px; min-height:18px; margin-top:10px; }
   .fp { margin-top:20px; font-size:11px; color:#6a6a6a; word-break:break-all; }
   .fp b { color:#8a8a8a; }
+  .hint { margin-top:10px; font-size:12px; color:#8a8a8a; }
 </style>
 </head>
 <body>
-  <form class="card" method="POST" action="/login">
+  <form class="card" method="POST" action="/auth" id="f">
     <h1>Ternimal Remote</h1>
-    <input type="password" name="password" placeholder="Access password" autofocus ${locked ? 'disabled' : ''}>
+    <input type="text" name="token" placeholder="Access token (or scan the QR code)" autofocus ${locked ? 'disabled' : ''}>
     <button type="submit" ${locked ? 'disabled' : ''}>${locked ? 'Locked — retry in a minute' : 'Sign in'}</button>
-    <div class="err">${badPassword ? 'Wrong password' : ''}${locked ? 'Too many attempts' : ''}</div>
+    <div class="err">${badToken ? 'Wrong token' : ''}${locked ? 'Too many attempts' : ''}</div>
+    <div class="hint">扫码或粘贴带令牌的访问链接时无需手动输入。</div>
     <div class="fp"><b>Certificate SHA-256 fingerprint (verify on the host):</b><br>${fp}</div>
   </form>
+  <script>
+    (function () {
+      var m = /^#T=(.+)$/.exec(location.hash || '');
+      if (!m) return;
+      try { history.replaceState(null, '', '/'); } catch (e) {}
+      var body = 'token=' + encodeURIComponent(m[1]);
+      fetch('/auth', { method: 'POST', credentials: 'same-origin',
+                       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                       body: body, redirect: 'manual' })
+        .then(function (r) { location.href = r.type === 'opaqueredirect' ? '/' : (r.redirected ? r.url : '/'); })
+        .catch(function () {});
+    })();
+  </script>
 </body>
 </html>`;
 }

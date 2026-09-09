@@ -1,9 +1,13 @@
-// AuthManager (M3, WBS-M3-B/C/D; technical design §2.5).
+// AuthManager (M3, WBS-M3-B/C/D; design §2.5; token model per user request).
 //
-// Single-password authentication with scrypt-at-rest storage, in-memory
-// bearer sessions (httpOnly Secure SameSite=Strict cookies), sliding 7-day
-// expiry, and a per-IP failed-login rate limiter (5 failures/minute → 1 min
-// lockout). Restart invalidates all sessions by design (documented limit).
+// Dynamic-access-token authentication: a URL-safe random token generated
+// per app launch (env TERNIMAL_TOKEN overrides for tests/recovery), shown
+// as a QR code in the tray "查看访问信息" window. Browsers open
+// https://host:port/#T=<token> — the fragment never reaches the server;
+// the login page exchanges it via POST /auth for an in-memory session
+// cookie (HttpOnly/Secure/SameSite=Strict, sliding 7-day expiry).
+// Per-IP failed-attempt rate limiter (5/min → 1 min lockout). Restart
+// rotates the token and invalidates all sessions by design.
 //
 // Testability: window/lock/TTL are injectable so verify-ratelimit.mjs can
 // run the semantics in milliseconds instead of minutes.
@@ -14,11 +18,11 @@ const DEFAULT_TTL_MS = 7 * 24 * 3600 * 1000; // 7 days, sliding
 const DEFAULT_WINDOW_MS = 60_000; // failure window
 const DEFAULT_LOCK_MS = 60_000; // lockout duration
 const DEFAULT_MAX_FAILURES = 5;
-const PASSWORD_LEN = 12;
+const TOKEN_BYTES = 24; // 192-bit, base64url → 32 chars
 
 export interface AuthManagerOptions {
-  /** Pre-hashed password ("scrypt$salt$hash") — normally from ConfigStore. */
-  passwordHash?: string;
+  /** Explicit access token (env override for tests/recovery); generated if absent. */
+  accessToken?: string;
   sessionTtlMs?: number;
   windowMs?: number;
   lockMs?: number;
@@ -44,7 +48,7 @@ export interface LoginResult {
 }
 
 export class AuthManager {
-  private passwordHash: string;
+  private accessToken: string;
   private readonly ttlMs: number;
   private readonly windowMs: number;
   private readonly lockMs: number;
@@ -53,29 +57,34 @@ export class AuthManager {
   private ips: Map<string, IpRecord> = new Map();
 
   constructor(opts: AuthManagerOptions = {}) {
-    this.passwordHash = opts.passwordHash ?? hashPassword(generatePassword());
+    this.accessToken = opts.accessToken ?? generateAccessToken();
     this.ttlMs = opts.sessionTtlMs ?? DEFAULT_TTL_MS;
     this.windowMs = opts.windowMs ?? DEFAULT_WINDOW_MS;
     this.lockMs = opts.lockMs ?? DEFAULT_LOCK_MS;
     this.maxFailures = opts.maxFailures ?? DEFAULT_MAX_FAILURES;
   }
 
-  /** Attempt login for an IP; rate-limits before even checking the password. */
-  login(ip: string, password: string): LoginResult {
+  /** Current access token — for the tray QR/URL display surface. */
+  getToken(): string {
+    return this.accessToken;
+  }
+
+  /** Attempt auth for an IP; rate-limits before even checking the token. */
+  login(ip: string, token: string): LoginResult {
     const now = Date.now();
     const rec = this.ips.get(ip);
     if (rec && rec.lockedUntil > now) {
       return { ok: false, status: 429, retryAfterMs: rec.lockedUntil - now };
     }
 
-    if (this.verifyPassword(password)) {
+    if (this.verifyToken(token)) {
       this.ips.delete(ip); // success resets the failure window
-      const token = crypto.randomBytes(32).toString('hex');
-      this.sessions.set(token, { createdAt: now, lastSeen: now });
+      const session = crypto.randomBytes(32).toString('hex');
+      this.sessions.set(session, { createdAt: now, lastSeen: now });
       return {
         ok: true,
         status: 303,
-        cookie: `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${Math.floor(this.ttlMs / 1000)}`,
+        cookie: `${SESSION_COOKIE}=${session}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${Math.floor(this.ttlMs / 1000)}`,
       };
     }
 
@@ -87,13 +96,13 @@ export class AuthManager {
   }
 
   /** Validate a session token; sliding expiry refreshes lastSeen. */
-  isValidSession(token: string | undefined | null): boolean {
-    if (!token) return false;
+  isValidSession(session: string | undefined | null): boolean {
+    if (!session) return false;
     const now = Date.now();
-    const rec = this.sessions.get(token);
+    const rec = this.sessions.get(session);
     if (!rec) return false;
     if (now - rec.lastSeen > this.ttlMs) {
-      this.sessions.delete(token);
+      this.sessions.delete(session);
       return false;
     }
     rec.lastSeen = now;
@@ -116,18 +125,12 @@ export class AuthManager {
     return !!rec && rec.lockedUntil > Date.now();
   }
 
-  /** Rotate the password and invalidate every existing session. */
-  resetPassword(): string {
-    const password = generatePassword();
-    this.passwordHash = hashPassword(password);
+  /** Rotate the access token and invalidate every existing session. */
+  rotateToken(): string {
+    this.accessToken = generateAccessToken();
     this.sessions.clear();
     this.ips.clear();
-    return password;
-  }
-
-  /** Only compares hash format equality — used by config migration checks. */
-  currentHash(): string {
-    return this.passwordHash;
+    return this.accessToken;
   }
 
   private recordFailure(ip: string, now: number): void {
@@ -142,33 +145,15 @@ export class AuthManager {
     }
   }
 
-  private verifyPassword(password: string): boolean {
-    try {
-      const [scheme, saltHex, hashHex] = this.passwordHash.split('$');
-      if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
-      const expected = Buffer.from(hashHex, 'hex');
-      const actual = crypto.scryptSync(password, Buffer.from(saltHex, 'hex'), expected.length, {
-        N: 16384,
-      });
-      return crypto.timingSafeEqual(expected, actual);
-    } catch {
-      return false;
-    }
+  private verifyToken(token: string): boolean {
+    const expected = Buffer.from(this.accessToken, 'utf8');
+    const actual = Buffer.from(token ?? '', 'utf8');
+    if (expected.length !== actual.length || expected.length === 0) return false;
+    return crypto.timingSafeEqual(expected, actual);
   }
 }
 
-/** scrypt$<salt hex>$<hash hex> — N=16384 per design §2.8. */
-export function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(password, salt, 64, { N: 16384 });
-  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
-}
-
-/** URL-safe random password, 12 chars (design §2.8 first-boot default). */
-export function generatePassword(): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  const bytes = crypto.randomBytes(PASSWORD_LEN);
-  let out = '';
-  for (let i = 0; i < PASSWORD_LEN; i++) out += alphabet[bytes[i] % alphabet.length];
-  return out;
+/** URL-safe random access token, 32 chars (192 bits of entropy). */
+export function generateAccessToken(): string {
+  return crypto.randomBytes(TOKEN_BYTES).toString('base64url');
 }

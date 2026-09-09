@@ -40,7 +40,7 @@ const { FakePtyHost } = await import(
   pathToFileURL(path.join(root, 'scripts/lib/fake-pty-host.mjs')).href
 );
 
-const PASSWORD = 'reconnect-test-pass';
+const TOKEN = 'reconnect-token-32-chars-okay';
 
 function hashOf(password) {
   const salt = crypto.randomBytes(16);
@@ -48,9 +48,9 @@ function hashOf(password) {
   return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 
-function login(port, password) {
+function login(port, token) {
   return new Promise((resolve, reject) => {
-    const body = new URLSearchParams({ password }).toString();
+    const body = new URLSearchParams({ token }).toString();
     const req = https.request(
       {
         host: '127.0.0.1',
@@ -127,7 +127,7 @@ const check = (name, ok, detail = '') => {
 // ---- scenario ----
 const host = new FakePtyHost();
 const registry = new SessionRegistry({ ptyHost: host, replayBytes: 64 * 1024 });
-const auth = new AuthManager({ passwordHash: hashOf(PASSWORD) });
+const auth = new AuthManager({ accessToken: TOKEN });
 const tls = await ensureCertificate(fs.mkdtempSync(path.join(os.tmpdir(), 'ternimal-rc-')));
 const server = new RemoteServer({
   registry,
@@ -141,7 +141,7 @@ const port = await server.start();
 
 try {
   const session = registry.create({ cols: 80, rows: 24 });
-  const lg = await login(port, PASSWORD);
+  const lg = await login(port, TOKEN);
   const token = /ternimal_session=([0-9a-f]+)/.exec(lg.setCookie ?? '')?.[1];
   assert.ok(token, 'login for cookie');
 

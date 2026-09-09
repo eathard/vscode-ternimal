@@ -1,6 +1,6 @@
 // smoke-e2e.mjs — real end-to-end check of the remote data plane:
 // launches the ACTUAL Electron app (real node-pty + real bash) behind the
-// M3 security stack (TLS + password login), authenticates over HTTPS,
+// M3 security stack (TLS + token login), authenticates over HTTPS,
 // connects an authenticated WebSocket client, drives a shell roundtrip,
 // verifies replay, and confirms unauthenticated handshakes are refused.
 //
@@ -15,7 +15,7 @@ import WebSocket from 'ws';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8790;
-const PASSWORD = 'smoke-test-pass-42';
+const TOKEN = 'smoke-test-token-32-chars-ok';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function waitHealthy(tries = 40) {
@@ -42,9 +42,9 @@ async function waitHealthy(tries = 40) {
 }
 
 /** POST /login; returns { status, location, setCookie }. */
-function login(password) {
+function login(token) {
   return new Promise((resolve, reject) => {
-    const body = new URLSearchParams({ password }).toString();
+    const body = new URLSearchParams({ token }).toString();
     const req = https.request(
       {
         host: '127.0.0.1',
@@ -134,7 +134,7 @@ const electron = spawn(
       ...process.env,
       TERNIMAL_PORT: String(PORT),
       TERNIMAL_HOST: '127.0.0.1',
-      TERNIMAL_PASSWORD: PASSWORD,
+      TERNIMAL_TOKEN: TOKEN,
       TERNIMAL_DEBUG: process.env.TERNIMAL_DEBUG ? '1' : '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -167,14 +167,14 @@ try {
 
   const bad = await login('definitely-wrong');
   assert.ok(!bad.setCookie && (bad.status === 303 || bad.status === 401));
-  const good = await login(PASSWORD);
+  const good = await login(TOKEN);
   assert.equal(good.status, 303);
   const token = /ternimal_session=([0-9a-f]+)/.exec(good.setCookie ?? '')?.[1];
   assert.ok(token, 'session cookie issued');
   for (const attr of ['HttpOnly', 'Secure', 'SameSite=Strict']) {
     assert.ok(good.setCookie.includes(attr), `cookie has ${attr}`);
   }
-  log('  PASS  password login over HTTPS issues hardened cookie (TC-M3-02/03)');
+  log('  PASS  token login over HTTPS issues hardened cookie (TC-M3-02/03)');
 
   const a = await connect(`wss://127.0.0.1:${PORT}/ws`, token);
   // The local window auto-created its initial tab; ours adds a second.

@@ -66,6 +66,16 @@ verify-reconnect.mjs 场景（TC-M4-05/08 核心，真传输类）：
 无未修复 P0/P1。P2：托盘图标为应用图标复用（未做“驻留态”角标）；
 重置密码弹窗为系统原生样式。
 
+## 8. 补遗：鉴权改为动态令牌 + 扫码（用户需求迭代）
+
+密码输入改为**动态访问令牌**（每次启动随机 192bit，`TERNIMAL_TOKEN` 可
+覆盖；`timingSafeEqual` 比对；限速/锁定/cookie 机制不变）。托盘「查看
+访问信息」弹**二维码**窗口（qrcode 依赖，URL/令牌/证书指纹同屏），
+手机扫码 → `https://ip:port/#T=<token>` → 页面 JS 自动换取会话 cookie
+并抹除片段（**片段不进服务器日志**）。「重置访问令牌」即时轮换并弹新
+二维码。`/login` 保留为 GET 别名。测试全部随迁：verify:m3 31 项、
+smoke、browser-e2e（新增"QR 式片段 URL 自动登录"用例，13/13 ×N）。
+
 ## 7. 补遗：真浏览器端到端验证（Chrome + puppeteer-core/CDP）
 
 自动化到浏览器层（此前 WS/HTTP 客户端测不到：资源加载、表单 UX、

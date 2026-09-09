@@ -4,8 +4,9 @@
 //
 // Drives system Chrome (headless) via puppeteer-core/CDP against the real
 // Electron app over HTTPS:
-//   / → 302 /login → fingerprint check → wrong password → error page →
-//   correct password → web terminal renders → cookie flags → new tab via UI
+//   / → 302 /login → fingerprint check → wrong token → error page →
+//   QR-style URL fragment (#T=...) auto-exchange → web terminal renders →
+//   cookie flags → new tab via UI
 //   → type into xterm → see bash echo → screenshots for the report.
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -19,7 +20,7 @@ import puppeteer from 'puppeteer-core';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8793;
-const PASSWORD = 'browser-e2e-pass';
+const TOKEN = 'browser-e2e-token-32-chars!';
 const SHOT_DIR = path.join(root, 'docs', 'test-reports', 'screenshots');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.error(...a);
@@ -31,7 +32,7 @@ const electron = spawn(path.join(root, 'node_modules', '.bin', 'electron'), ['.'
     ...process.env,
     TERNIMAL_PORT: String(PORT),
     TERNIMAL_HOST: '127.0.0.1',
-    TERNIMAL_PASSWORD: PASSWORD,
+    TERNIMAL_TOKEN: TOKEN,
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -142,8 +143,8 @@ try {
   await page.goto(`https://127.0.0.1:${PORT}/`, { waitUntil: 'networkidle0', timeout: 20000 });
   check('unauthenticated / redirects to /login', page.url().endsWith('/login'), page.url());
   check(
-    'login form present (password input)',
-    await page.$('input[type=password]') !== null
+    'auth form present (token input)',
+    await page.$('input[type=text][name=token]') !== null
   );
 
   // 2. Fingerprint on the login page matches the server certificate.
@@ -156,19 +157,29 @@ try {
   );
   await page.screenshot({ path: path.join(SHOT_DIR, 'login.png') });
 
-  // 3. Wrong password → redirected back with the error flag.
-  await page.type('input[type=password]', 'totally-wrong');
+  // 3. Wrong token → redirected back with the error flag.
+  await page.type('input[type=text][name=token]', 'totally-wrong-token');
   await Promise.all([page.waitForNavigation({ timeout: 10000 }), page.click('button')]);
-  check('wrong password rejected', page.url().includes('/login?e=1'), page.url());
+  check('wrong token rejected', page.url().includes('/login?e=1'), page.url());
   check(
     'error hint rendered',
-    (await page.content()).includes('Wrong password')
+    (await page.content()).includes('Wrong token')
   );
 
-  // 4. Correct password → the web terminal renders.
-  await page.type('input[type=password]', PASSWORD);
-  await Promise.all([page.waitForNavigation({ timeout: 10000 }), page.click('button')]);
-  check('login lands on /', page.url().endsWith('/'), page.url());
+  // 4. QR-style flow: open the access URL with the token in the URL
+  //    FRAGMENT (#T=...). The auth page auto-exchanges it for a session
+  //    cookie and strips the fragment — exactly what a phone sees after
+  //    scanning the tray QR code. No typing at all.
+  await page.goto(`https://127.0.0.1:${PORT}/#T=${encodeURIComponent(TOKEN)}`, {
+    waitUntil: 'networkidle0',
+    timeout: 20000,
+  });
+  await sleep(800); // auto-exchange fetch + redirect
+  check(
+    'QR-style fragment URL auto-authenticates',
+    page.url().endsWith('/') && !page.url().includes('#'),
+    page.url()
+  );
   const tabs1 = await poll(
     page,
     `document.querySelectorAll('.tab-bar-tab').length`,

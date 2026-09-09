@@ -5,7 +5,7 @@ import { RemoteServer } from './remoteServer';
 import { registerIpcHandlers, unregisterIpcHandlers } from './ipcHandlers';
 import { ConfigStore } from './configStore';
 import { ensureCertificate } from './certManager';
-import { AuthManager, generatePassword, hashPassword } from './authManager';
+import { AuthManager } from './authManager';
 import { TrayController } from './tray';
 
 // Disable Chromium sandbox for Linux compatibility with distros like Deepin
@@ -70,24 +70,19 @@ async function shutdown(): Promise<void> {
   }
 }
 
-// ---- M3/M4 bootstrap: config → password → cert → server → tray ----
+// ---- M3/M4 bootstrap: config → token → cert → server → tray ----
 
 async function startRemoteServer(): Promise<void> {
   const userData = app.getPath('userData');
   const configStore = new ConfigStore(path.join(userData, 'config'));
   const config = configStore.load();
 
-  // Password: explicit env override (recovery/tests) > stored hash >
-  // first-boot random (logged once; tray offers display + reset in M4).
-  if (process.env.TERNIMAL_PASSWORD) {
-    config.passwordHash = hashPassword(process.env.TERNIMAL_PASSWORD);
-  } else if (!config.passwordHash) {
-    const password = generatePassword();
-    config.passwordHash = hashPassword(password);
-    configStore.save({ passwordHash: config.passwordHash });
-    console.warn(`[Ternimal] first-boot access password (SAVE IT): ${password}`);
-    console.warn('[Ternimal] 也可稍后在托盘菜单「重置密码」获取新密码');
-  }
+  // Dynamic access token: env TERNIMAL_TOKEN override (tests/recovery);
+  // otherwise a fresh 192-bit token every launch — scan the tray QR code
+  // to sign in on a phone. Restart rotates it by design.
+  const auth = new AuthManager({
+    accessToken: process.env.TERNIMAL_TOKEN,
+  });
 
   const port = Number(process.env.TERNIMAL_PORT) || config.port;
   const host = process.env.TERNIMAL_HOST || config.host;
@@ -104,7 +99,6 @@ async function startRemoteServer(): Promise<void> {
   // Registry takes the configured replay budget (M4-C, TC-M4-04).
   registry = new SessionRegistry({ replayBytes: config.replayBufferBytes });
 
-  const auth = new AuthManager({ passwordHash: config.passwordHash });
   remoteServer = new RemoteServer({
     registry,
     auth,
@@ -119,12 +113,15 @@ async function startRemoteServer(): Promise<void> {
   // IPC handlers exactly once, with a lazy window accessor (M4 reopen safe).
   registerIpcHandlers(registry, () => mainWindow);
 
+  // The access URL (token in the fragment) is logged once per launch.
+  console.warn(`[Ternimal] access URL: https://${host === '0.0.0.0' ? lanIpForLog() : host}:${remoteServer.getPort()}/#T=${auth.getToken()}`);
+  console.warn('[Ternimal] 托盘「查看访问信息」可显示二维码（手机扫码即登录），「重置访问令牌」可轮换');
+
   // Tray (M4-A): the residency control surface. Skipped in headless test
   // mode (CI boxes may have no display; Tray would throw).
   if (!process.env.TERNIMAL_HEADLESS_TEST) {
     tray = new TrayController({
       auth,
-      config: configStore,
       getPort: () => remoteServer?.getPort() ?? port,
       certFingerprint: tls.fingerprint,
       showWindow: createWindow,
@@ -132,6 +129,16 @@ async function startRemoteServer(): Promise<void> {
     });
     tray.create();
   }
+}
+
+function lanIpForLog(): string {
+  const os = require('os') as typeof import('os');
+  for (const nets of Object.values(os.networkInterfaces())) {
+    for (const net of nets ?? []) {
+      if (net.family === 'IPv4' && !net.internal) return net.address;
+    }
+  }
+  return '127.0.0.1';
 }
 
 app.whenReady().then(() => {

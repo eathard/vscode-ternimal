@@ -54,27 +54,29 @@ npm run pack:linux       AppImage(113MB) + deb(78MB) 一键成功
 - 开发运行：`npm run dev`（Linux 已带 --no-sandbox）
 - 安装运行：`release/Ternimal-1.0.0.AppImage` 或
   `sudo dpkg -i release/ternimal_1.0.0_amd64.deb`
-- 首次启动：主控台打印一次性访问密码（SAVE IT），托盘菜单可
-  「查看访问信息/重置密码」；自签证书指纹同步打印并显示于登录页
-- 远程访问：同内网设备打开 `https://<主机内网IP>:8443` →
-  浏览器证书警告页「高级→继续」（可先核对登录页指纹与托盘一致）→
-  输入访问密码 → 出现与本地相同的标签列表，点击标签查看 Claude Code
+- 首次启动：自动生成**动态访问令牌**（每次启动轮换），主控台打印含
+  令牌的访问 URL；托盘「查看访问信息（二维码）」弹出二维码窗口
+- 远程访问（推荐，免输入）：手机扫托盘二维码 → 证书警告页
+  「高级→继续」（可先核对页面指纹与托盘一致）→ **自动登录**进入终端
+- 远程访问（手动）：浏览器打开 `https://<主机内网IP>:8443` → 粘贴
+  访问令牌（托盘查看/复制访问地址含 `#T=` 令牌链接，直接打开亦可）
 
 ### 运维要点
-- 忘记密码：`TERNIMAL_PASSWORD=新密码` 环境变量覆盖启动一次（会覆写
-  存储哈希）；或托盘「重置密码」（旧会话全部失效）
-- 配置：`<userData>/config.json` —— port/host/passwordHash/certPath/
+- 令牌恢复/固定：`TERNIMAL_TOKEN=自定义令牌` 环境变量覆盖启动（测试
+  用）；或托盘「重置访问令牌」（旧会话全部失效，立即弹出新二维码）
+- 配置：`<userData>/config.json` —— port/host/certPath/
   replayBufferBytes/maxSessions；改后重启生效（TC-M4-04）
 - 证书：<userData>/certs/ 下自动生成；换正式证书填 certPath
 - 快速端口覆盖：`TERNIMAL_PORT` / `TERNIMAL_HOST`（优先于配置文件）
 - 全量自检：`npm run verify:m1 && npm run verify:m3 && npm run verify:m4
-  && node scripts/smoke-e2e.mjs`
+  && node scripts/smoke-e2e.mjs && npm run verify:browser`
 
 ## 5. 已知限制（设计取舍 + 遗留 P2）
 
 1. 自签证书首次访问需手动信任（指纹核对流程已内置，方案书既定取舍）。
 2. 会话/限速为内存态：应用重启后远程需重新登录（防拖库冒用，§2.5）。
-3. 密码仅首启/重置时明文展示一次，不可找回，只能覆盖重置。
+3. 访问令牌不落盘、每次启动轮换：重启后需重新扫码/取新令牌（安全
+   取舍：泄漏自愈；`TERNIMAL_TOKEN` 可固定）。
 4. 重放环默认 1MB/标签：更早历史被整块淘汰（可调 replayBufferBytes）。
 5. `ws` 必须保持 webpack external（打包版死锁事件循环，M2 报告 §4）。
 6. node-pty 为原生模块：升级 Electron/node-pty 版本须先 `npm run rebuild`。

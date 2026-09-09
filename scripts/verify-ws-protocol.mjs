@@ -44,7 +44,7 @@ const { FakePtyHost } = await import(
 );
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const PASSWORD = 'correct-horse-battery';
+const TOKEN = 'ws-protocol-token-32-chars-ok';
 
 async function startServer(opts = {}) {
   const host = new FakePtyHost();
@@ -52,7 +52,7 @@ async function startServer(opts = {}) {
   const auth =
     opts.auth ??
     new AuthManager({
-      passwordHash: opts.passwordHash ?? hashOf(PASSWORD),
+      accessToken: opts.accessToken ?? TOKEN,
       windowMs: opts.windowMs,
       lockMs: opts.lockMs,
       maxFailures: opts.maxFailures,
@@ -80,12 +80,6 @@ async function startServer(opts = {}) {
     fingerprint: tls.fingerprint,
     tls,
   };
-}
-
-function hashOf(password) {
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(password, salt, 64, { N: 16384 });
-  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
 
 function connect(url, cookie) {
@@ -121,9 +115,9 @@ function expectUpgradeRejected(url, cookie, wantedStatus) {
 }
 
 /** POST /login and return { status, location, setCookie, retryAfter }. */
-function login(port, password) {
+function login(port, token) {
   return new Promise((resolve, reject) => {
-    const body = new URLSearchParams({ password }).toString();
+    const body = new URLSearchParams({ token }).toString();
     const req = https.request(
       {
         host: '127.0.0.1',
@@ -161,7 +155,7 @@ function tokenFrom(setCookie) {
 }
 
 async function loginOk(port) {
-  const r = await login(port, PASSWORD);
+  const r = await login(port, TOKEN);
   assert.equal(r.status, 303, 'login should redirect');
   const token = tokenFrom(r.setCookie);
   assert.ok(token, 'session cookie issued');
@@ -299,16 +293,16 @@ test('health is open over TLS; login page renders with fingerprint (TC-M3-01 hal
   assert.ok(page.body.includes(fingerprint), 'fingerprint displayed for eyeball verification');
 });
 
-test('TC-M3-02/03: wrong password rejected; right password issues hardened cookie', async () => {
+test('TC-M3-02/03: wrong token rejected; right token issues hardened cookie', async () => {
   const { server, port } = await startServer();
   cleanups.push(() => server.stop());
 
-  const bad = await login(port, 'wrong-password');
+  const bad = await login(port, 'wrong-token');
   assert.equal(bad.status, 303);
   assert.ok(bad.location.includes('e=1'), 'redirects back with error flag');
   assert.ok(!bad.setCookie, 'no cookie on failure');
 
-  const good = await login(port, PASSWORD);
+  const good = await login(port, TOKEN);
   assert.equal(good.status, 303);
   assert.equal(good.location, '/');
   const cookie = good.setCookie ?? '';
@@ -356,12 +350,12 @@ test('TC-M3-05: five bad logins lock the IP; correct password refused while lock
     const r = await login(port, 'nope');
     assert.ok(r.status === 303 || r.status === 429, `attempt ${i + 1} handled`);
   }
-  const locked = await login(port, PASSWORD);
+  const locked = await login(port, TOKEN);
   assert.equal(locked.status, 429, 'correct password refused while locked');
   assert.ok(locked.retryAfter, 'Retry-After header present');
 
   await sleep(400); // lockMs=300 for test speed
-  const recovered = await login(port, PASSWORD);
+  const recovered = await login(port, TOKEN);
   assert.equal(recovered.status, 303, 'lock expired, login succeeds');
   assert.ok(recovered.setCookie, 'session issued after recovery');
 });

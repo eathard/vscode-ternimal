@@ -38,7 +38,7 @@
 | `scripts/verify-ratelimit.mjs` | 5 次/分阈值触发与 1 分钟解锁 | 同上 |
 | `scripts/verify-ws-protocol.mjs` | 未认证拒握手、list/attach/input/resize、畸形消息断链、心跳超时 | 同上 |
 | `scripts/verify-reconnect.mjs` | 模拟断链→重连→attach→replay 与断链前输出衔接 | 同上 |
-|  `scripts/verify-browser-e2e.mjs` | **真浏览器全流程**（`npm run verify:browser`）：未认证重定向、登录表单与指纹核对、错/对密码、标签栏与 UI 按钮、cookie 三属性、xterm 键入→PTY→bash→渲染回显、**刷新后恢复且不新建标签、刷新零陈旧查询注入（无 `1;2c` 垃圾）**；产截图 `docs/test-reports/screenshots/` | 同上 |
+|  `scripts/verify-browser-e2e.mjs` | **真浏览器全流程**（`npm run verify:browser`）：未认证重定向、鉴权页与指纹核对、错令牌/**二维码式 `#T=` 片段 URL 自动登录**、标签栏与 UI 按钮、cookie 三属性、xterm 键入→PTY→bash→渲染回显、**刷新后恢复且不新建标签、刷新零陈旧查询注入（无 `1;2c` 垃圾）**；产截图 `docs/test-reports/screenshots/` | 同上 |
 
 脚本运行前置：`verify-ringbuffer/registry/ratelimit/ws-protocol/reconnect`
 仅依赖 `node`（≥18）与仓库 `node_modules`，自起最小 Registry/Server 实例；
@@ -80,13 +80,13 @@
 | 用例 | 前置 | 步骤 | 预期 |
 |------|------|------|------|
 | TC-M3-01 | 首次启动 | 查看托盘/日志中的证书指纹；远程端访问 `https://<host>:8443` | 证书告警页指纹与展示一致；手动信任后可访问（Android/iOS 各验一次） |
-| TC-M3-02 | 打开登录页 | 输入错误密码 | 拒绝，提示密码错误；输入托盘展示的正确密码则通过，跳转终端页 |
+| TC-M3-02 | 打开鉴权页 | 输入错误令牌 | 拒绝并提示；扫托盘二维码（`#T=` 片段 URL）自动登录跳转终端页 |
 | TC-M3-03 | 登录成功后 | 检查 cookie | `ternimal_session` 存在且属性为 HttpOnly/Secure/SameSite=Strict |
 | TC-M3-04 | 未登录状态 | 直接发起 WS `/ws` 握手（可用脚本） | 握手被拒（401），收不到任何会话数据；浏览器端被导回登录页 |
-| TC-M3-05 | 登录页 | 同一 IP 连续输错 5 次密码 | 第 6 次起返回限速提示；1 分钟后可再试 |
+| TC-M3-05 | 鉴权页 | 同一 IP 连续输错 5 次令牌 | 第 6 次起返回限速提示；1 分钟后可再试 |
 | TC-M3-06 | 服务运行中 | `curl http://<host>:8443/`（明文） | 明文数据面不可用（拒绝或重定向至 https，不返回页面内容） |
 | TC-M3-07 | — | `curl -I https://<host>:8443/static/../package.json` 类路径穿越尝试 | 403/404，读不到 webRoot 外文件 |
-| TC-M3-08 | 登录成功 | 托盘"重置访问密码"→ 旧浏览器刷新 | 旧 cookie 失效，需用新密码重登 |
+| TC-M3-08 | 登录成功 | 托盘"重置访问令牌"→ 旧浏览器刷新 | 旧 cookie 失效，需重新扫码/用新令牌登录 |
 
 **M3 验收门：TC-M3-01～08 全通过。**
 
@@ -94,7 +94,7 @@
 
 | 用例 | 前置 | 步骤 | 预期 |
 |------|------|------|------|
-| TC-M4-01 | 应用运行 | 查看托盘 | 菜单含：显示窗口/复制访问地址/查看重置密码/退出，功能逐项可用 |
+| TC-M4-01 | 应用运行 | 查看托盘 | 菜单含：显示窗口/复制访问地址/查看访问信息（二维码）/重置访问令牌/退出，功能逐项可用 |
 | TC-M4-02 | 标签 1 跑 `claude`，远程端已附着 | 关闭本地窗口，等待 ≥10 分钟，远程端继续操作 | 会话存活，远程交互不中断；本地进程未退出（托盘在） |
 | TC-M4-03 | TC-M4-02 之后 | 托盘"显示窗口" | 窗口重建，标签恢复，历史输出仍在 |
 | TC-M4-04 | 手改 `config.json` 端口/缓冲上限后重启 | 验证生效（netstat 端口、重放大小变化） | 配置项全部生效 |
