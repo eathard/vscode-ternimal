@@ -79,7 +79,8 @@ smoke、browser-e2e（新增"QR 式片段 URL 自动登录"用例，13/13 ×N）
 ## 9. 补遗：Web 端软键盘（Ctrl/Alt/Shift 组合键，用户需求迭代）
 
 移动端无法发送组合键 → 可拖动悬浮条（Ctrl/Alt/Shift 粘滞开关 +
-Esc/Tab 直发，位置记忆 localStorage）。字节级映射（shared/
+Esc/Tab/↑↓←→ 直发，位置记忆 localStorage；方向键遵循 DECCKM 应用
+光标模式并支持修饰组合 `\x1b[1;<mod>` 形式）。字节级映射（shared/
 modifierKeys.ts 纯函数）注入 onData 管道，不伪造事件。验证：
 verify:softkeys 单测全过 + browser-e2e 三项（悬浮条渲染 / 点亮 Ctrl 敲
 c 真实中断 `sleep 30` 出 `^C` / 下一键普通 `x` 无 `^X`），16/16。

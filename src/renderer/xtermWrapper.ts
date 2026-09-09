@@ -148,6 +148,16 @@ export class XtermWrapper implements IXtermWrapper {
     this.terminal.focus();
   }
 
+  /** DECCKM state — soft-keyboard arrows send SS3 sequences when the
+   *  running program (vim/less/htop…) switched to application cursor mode. */
+  isApplicationCursorMode(): boolean {
+    try {
+      return this.terminal.modes.applicationCursorKeysMode === true;
+    } catch {
+      return false;
+    }
+  }
+
   dispose(): void {
     this.disposeWebgl();
     this.terminal.dispose();

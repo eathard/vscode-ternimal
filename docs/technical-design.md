@@ -172,7 +172,8 @@ export interface TerminalTransport {
   "未激活"身份收养该会话）。
 
 **Web 软键盘（`src/web/softKeys.ts`，仅 web 束挂载）**：可拖动悬浮条
-（Ctrl/Alt/Shift 粘滞开关 + Esc/Tab 直发键），位置钳制于视口并存
+（Ctrl/Alt/Shift 粘滞开关 + Esc/Tab/↑↓←→ 直发键；方向键按活动标签的
+DECCKM 状态选 CSI `\x1b[A` 或 SS3 `\x1bOA`，修饰时恒为 `\x1b[1;<mod>` 形式，mod=1+shift+2·alt+4·ctrl），位置钳制于视口并存
 localStorage。组合翻译用**字节级映射**（`src/shared/modifierKeys.ts`
 纯函数，Ctrl+a..z→\x01..\x1a、Alt→ESC 前缀、Shift+Tab→\x1b[Z、
 Ctrl+Shift≡Ctrl、未映射原样透传），经 `setInputTransform` 缝注入

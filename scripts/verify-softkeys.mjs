@@ -13,7 +13,7 @@ execSync(
     '--module commonjs --target es2022 --esModuleInterop --skipLibCheck --moduleResolution node',
   { cwd: root, stdio: 'inherit' }
 );
-const { applyModifiers, hasModifiers, NO_MODIFIERS } = await import(
+const { applyModifiers, hasModifiers, NO_MODIFIERS, arrowSequence } = await import(
   pathToFileURL(path.join(root, 'dist/verify/shared/modifierKeys.js')).href
 );
 
@@ -60,6 +60,17 @@ check('empty string passes through', applyModifiers('', M(true, false, false)).d
 
 // hasModifiers helper
 check('hasModifiers detects combos', hasModifiers(M(true, false, true)) === true && hasModifiers(NO_MODIFIERS) === false && hasModifiers(null) === false);
+
+// Arrow sequences (direct taps honor modifiers + DECCKM)
+check('arrow up plain → CSI \\e[A', arrowSequence('up', NO_MODIFIERS) === '\x1b[A');
+check('arrow up in application mode → SS3 \\eOA', arrowSequence('up', NO_MODIFIERS, true) === '\x1bOA');
+check('arrow left plain → \\e[D', arrowSequence('left', NO_MODIFIERS) === '\x1b[D');
+check('Ctrl+up → \\e[1;5A', arrowSequence('up', M(true, false, false)) === '\x1b[1;5A');
+check('Alt+right → \\e[1;3C', arrowSequence('right', M(false, true, false)) === '\x1b[1;3C');
+check('Shift+down → \\e[1;2B', arrowSequence('down', M(false, false, true)) === '\x1b[1;2B');
+check('Ctrl+Shift+left → \\e[1;6D', arrowSequence('left', M(true, false, true)) === '\x1b[1;6D');
+check('Ctrl+Alt+Shift+up → \\e[1;8A', arrowSequence('up', M(true, true, true)) === '\x1b[1;8A');
+check('modified arrow ignores application mode (CSI form)', arrowSequence('up', M(true, false, false), true) === '\x1b[1;5A');
 
 // Direct-key path (Esc/Tab buttons go through the same table)
 check('Esc direct with no mods → \\x1b', applyModifiers('\x1b', NO_MODIFIERS).data === '\x1b');

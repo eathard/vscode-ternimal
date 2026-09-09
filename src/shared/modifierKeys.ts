@@ -86,3 +86,31 @@ export function applyModifiers(
 
   return { data: out ?? data, consumed: true };
 }
+
+export type ArrowDirection = 'up' | 'down' | 'left' | 'right';
+
+const ARROW_FINALS: Record<ArrowDirection, string> = {
+  up: 'A',
+  down: 'B',
+  right: 'C',
+  left: 'D',
+};
+
+/**
+ * Arrow key sequence honoring pending modifiers and the terminal's cursor
+ * mode (DECCKM): plain arrows in application mode are SS3 (`ESC O A`),
+ * modified arrows always use the CSI `1;<mod>` form (xterm convention,
+ * modifier = 1 + shift + 2*alt + 4*ctrl).
+ */
+export function arrowSequence(
+  dir: ArrowDirection,
+  mods: ModifierState | null | undefined,
+  applicationCursor = false
+): string {
+  const final = ARROW_FINALS[dir];
+  const m = mods
+    ? 1 + (mods.shift ? 1 : 0) + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0)
+    : 1;
+  if (m === 1) return applicationCursor ? `\x1bO${final}` : `\x1b[${final}`;
+  return `\x1b[1;${m}${final}`;
+}

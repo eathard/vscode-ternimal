@@ -27,6 +27,11 @@ export function mountSoftKeys(app: TerminalApp): HTMLElement {
     <span class="sk-sep"></span>
     <button class="sk-direct" data-key="\x1b">Esc</button>
     <button class="sk-direct" data-key="\t">Tab</button>
+    <span class="sk-sep"></span>
+    <button class="sk-arrow" data-dir="left" title="←">←</button>
+    <button class="sk-arrow" data-dir="down" title="↓">↓</button>
+    <button class="sk-arrow" data-dir="up" title="↑">↑</button>
+    <button class="sk-arrow" data-dir="right" title="→">→</button>
   `;
   document.body.appendChild(bar);
 
@@ -58,6 +63,9 @@ export function mountSoftKeys(app: TerminalApp): HTMLElement {
       } else if (b.classList.contains('sk-direct')) {
         app.sendDirect(b.dataset.key!);
         vibrate();
+      } else if (b.classList.contains('sk-arrow')) {
+        app.sendArrow(b.dataset.dir as 'up' | 'down' | 'left' | 'right');
+        vibrate();
       }
       // handle button: drag only, no action
     });
@@ -80,7 +88,7 @@ export function mountSoftKeys(app: TerminalApp): HTMLElement {
     startDrag
   );
   bar.addEventListener('pointerdown', (e) => {
-    if ((e.target as HTMLElement).closest('button.sk-mod, button.sk-direct')) return;
+    if ((e.target as HTMLElement).closest('button.sk-mod, button.sk-direct, button.sk-arrow')) return;
     startDrag(e);
   });
   bar.addEventListener('pointermove', (e) => {

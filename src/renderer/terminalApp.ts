@@ -13,7 +13,9 @@ import {
   ModifierState,
   NO_MODIFIERS,
   applyModifiers,
+  arrowSequence,
   hasModifiers,
+  ArrowDirection,
 } from '../shared/modifierKeys';
 
 export class TerminalApp {
@@ -231,6 +233,16 @@ export class TerminalApp {
     if (!this.activeTabId) return;
     const r = applyModifiers(data, this.pendingMods);
     getTransport().input(this.activeTabId, r.data);
+    this.clearPendingMods();
+  }
+
+  /** Arrow-key tap: sequence honors pending modifiers and the active tab's
+   *  cursor mode (DECCKM — vim/less switch to SS3 arrows). */
+  sendArrow(dir: ArrowDirection): void {
+    if (!this.activeTabId) return;
+    const tab = this.tabs.get(this.activeTabId);
+    const appCursor = tab ? tab.wrapper.isApplicationCursorMode() : false;
+    getTransport().input(this.activeTabId, arrowSequence(dir, this.pendingMods, appCursor));
     this.clearPendingMods();
   }
 

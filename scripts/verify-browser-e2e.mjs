@@ -251,10 +251,11 @@ try {
   // 7.5 Soft keyboard: Ctrl tap + letter must deliver a REAL Ctrl+C to
   //     bash (one-shot: the modifier resets after the keystroke).
   check(
-    'softkeys floating bar rendered (Ctrl/Alt/Shift/Esc/Tab)',
+    'softkeys floating bar rendered (Ctrl/Alt/Shift/Esc/Tab + arrows)',
     (await page.$('#softkeys')) !== null &&
       (await page.$$('#softkeys .sk-mod')).length === 3 &&
-      (await page.$$('#softkeys .sk-direct')).length === 2
+      (await page.$$('#softkeys .sk-direct')).length === 2 &&
+      (await page.$$('#softkeys .sk-arrow')).length === 4
   );
   await page.keyboard.type('sleep 30\r');
   await poll(
@@ -287,6 +288,24 @@ try {
         `!document.querySelector('#softkeys .sk-mod[data-mod=ctrl]').classList.contains('sk-active')`
       ))
   );
+  // Arrow keys: type a marker, move left x3, insert X → readline re-renders
+  // the line as Xqzq (only real CSI arrows can do this).
+  await page.keyboard.type('qzq');
+  await sleep(400);
+  for (let i = 0; i < 3; i++) {
+    await page.click('#softkeys .sk-arrow[data-dir=left]');
+    await sleep(120);
+  }
+  await page.keyboard.type('X');
+  const arrowWorked = await poll(
+    page,
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').includes('Xqzq') ? 'y' : ''`,
+    'arrow-left moved the cursor (Xqzq rendered)',
+    12000
+  );
+  check('softkey arrows navigate readline (Xqzq rendered)', arrowWorked === 'y');
+  await page.keyboard.type('\r'); // execute, keep prompt clean
+
   // One-shot: the NEXT plain letter must arrive unmodified (no ^X junk).
   await page.keyboard.type('x');
   const plainX = await poll(
