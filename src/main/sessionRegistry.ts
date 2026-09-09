@@ -56,6 +56,28 @@ const RESIZE_DEBOUNCE_MS = 200;
 const TITLE_POLL_MS = 1000;
 const DEFAULT_REPLAY_BYTES = 1024 * 1024;
 
+// Stale terminal-capability QUERIES captured in a replay buffer must not be
+// re-delivered to a fresh xterm: xterm auto-answers them (e.g. DA1 "ESC[c"
+// -> "ESC[?1;2c"), and that answer is injected as PTY input — visible as
+// junk like "1;2c" typed into the running program (bash echo; Claude Code
+// sends DA/XTVERSION/OSC-color queries on startup, so refresh used to
+// reproduce this every time). Strip every known query form at replay time.
+// (Responses never occur in the buffer: it mirrors PTY OUTPUT only.)
+const STALE_QUERY_PATTERNS: RegExp[] = [
+  /\x1b\[[0-9;]*c/g, // Primary DA (incl. "ESC[c")
+  /\x1b\[>[0-9;]*c/g, // Secondary DA
+  /\x1b\[>[0-9;]*q/g, // XTVERSION (DCS-form answer would confuse parsers)
+  /\x1b\[[0-9]*n/g, // DSR (incl. cursor-position request "ESC[6n")
+  /\x1b\[\??[0-9;]*\$p/g, // DECRQM
+  /\x1b\](10|11|12);\?[^\x07\x1b]*(\x07|\x1b\\)/g, // OSC color QUERY
+];
+
+function sanitizeReplay(data: string): string {
+  let out = data;
+  for (const re of STALE_QUERY_PATTERNS) out = out.replace(re, '');
+  return out;
+}
+
 export interface SessionRegistryOptions {
   /** Injectable PTY host (tests pass a fake; default = PtyManager). */
   ptyHost?: PtyHost;
@@ -172,7 +194,7 @@ export class SessionRegistry extends EventEmitter {
 
   /** Replay snapshot for attach flows (M2 remote, M4 window reopen). */
   getReplay(id: string): string {
-    return this.sessions.get(id)?.buffer.snapshot() ?? '';
+    return sanitizeReplay(this.sessions.get(id)?.buffer.snapshot() ?? '');
   }
 
   dispose(): void {

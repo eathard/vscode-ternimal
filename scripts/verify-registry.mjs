@@ -154,6 +154,26 @@ test('replay buffer respects configured cap', () =>
     void host;
   }));
 
+test('replay sanitization: stale terminal queries stripped, data intact', () =>
+  withRegistry(async ({ host, registry }) => {
+    const info = registry.create({ cols: 80, rows: 24 });
+    // Simulate Claude Code/bash emitting capability queries (a fresh xterm
+    // would auto-answer them and the answer would be injected as PTY input
+    // — the "1;2c junk on refresh" bug).
+    host.ptys
+      .get(info.id)
+      .write('before\x1b[c\x1b[>0;276;0c\x1b[>q\x1b[6n\x1b]11;?\x1b\\after');
+    const replay = registry.getReplay(info.id);
+    assert.ok(replay.includes('before') && replay.includes('after'), 'plain data kept');
+    assert.ok(!replay.includes('\x1b[c'), 'DA1 stripped');
+    assert.ok(!replay.includes('\x1b[>'), 'DA2/XTVERSION stripped');
+    assert.ok(!replay.includes('\x1b[6n'), 'DSR stripped');
+    assert.ok(!replay.includes(']11;?'), 'OSC color query stripped');
+    // OSC color SET (non-query) is program state and must survive.
+    host.ptys.get(info.id).write('\x1b]11;rgb:1/1/1\x1b\\keep');
+    assert.ok(registry.getReplay(info.id).includes('rgb:1/1/1'), 'OSC set kept');
+  }));
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

@@ -239,9 +239,31 @@ try {
 
   // 8. Reload regression: a page refresh must RESTORE sessions, never
   //    spawn a new one (listTabs used to resolve from an empty cache while
-  //    the socket was still connecting).
+  //    the socket was still connecting). Also: seed a stale DA query in
+  //    the buffer (like Claude Code does on startup) — after reload the
+  //    fresh xterm must NOT auto-answer it into PTY input ("1;2c" junk).
+  const visibleSel2 = '.terminal-instance:not([style*="none"])';
+  await page.evaluate(
+    `document.querySelector('${visibleSel2} .xterm-helper-textarea')?.focus()`
+  );
+  await sleep(300);
+  await page.keyboard.type("printf '\\033[c' # seed stale DA query\r");
+  await poll(
+    page,
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').includes('seed stale DA query') ? 'y' : ''`,
+    'seed command echoed',
+    15000
+  );
   const beforeReload = await page.evaluate(
     `document.querySelectorAll('.tab-bar-tab').length`
+  );
+  // NOTE: clients attached when the query was LIVE (the old web page AND
+  // the local Electron window) each auto-answered it once — those echoes
+  // are already in the buffer and legitimately replay. What must NOT
+  // happen: the REFRESH adding NEW answers. Differential assertion:
+  await sleep(1200);
+  const junkBefore = await page.evaluate(
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').split('1;2c').length - 1`
   );
   await page.reload({ waitUntil: 'networkidle0', timeout: 20000 });
   await poll(
@@ -258,6 +280,15 @@ try {
     'page reload restores tabs without creating a new one',
     afterReload === beforeReload,
     `${beforeReload}→${afterReload}`
+  );
+  await sleep(1000); // a stale-query auto-answer would echo within this window
+  const junkAfter = await page.evaluate(
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').split('1;2c').length - 1`
+  );
+  check(
+    'reload does not inject stale-query responses (no new "1;2c" junk)',
+    junkAfter === junkBefore,
+    `junk ${junkBefore}→${junkAfter}`
   );
 
   await page.screenshot({ path: path.join(SHOT_DIR, 'terminal.png') });

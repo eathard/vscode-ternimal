@@ -38,7 +38,7 @@ npm run build            三配置全部 compiled（renderer 3 条历史 warning
 npm run verify:m1        ringbuffer 6/6 · registry 7/7
 npm run verify:m3        auth+cert+config 14/14 · ws-protocol 18/18
 npm run verify:m4        reconnect 8/8（硬断链→退避重连→重放补齐→输入恢复）
-npm run verify:browser   browser-e2e 12/12（真 Chrome：登录/指纹/cookie 属性/标签 UI/xterm 回显/刷新不新建标签；3 连跑全绿，详见 M4 报告 §7）
+npm run verify:browser   browser-e2e 13/13（真 Chrome：登录/指纹/cookie 属性/标签 UI/xterm 回显/刷新不新建标签/刷新零垃圾注入；详见 M4 报告 §7）
 node scripts/smoke-e2e.mjs  8/8（真实 Electron+真 bash+TLS+登录+WSS 往返+重放）
 npm run pack:linux       AppImage(113MB) + deb(78MB) 一键成功
 打包产物实测               linux-unpacked 启动 → /health=200 → 登录页正常

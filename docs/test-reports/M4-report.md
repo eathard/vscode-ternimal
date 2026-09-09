@@ -90,7 +90,8 @@ PASS ×11：未认证跳登录 / 登录表单 / 登录页指纹=服务端证书�
 | 3 | **Web 端从未 attach**：switchTab 不发 attach → 服务端拒绝输入（4003）→ 打字无效 | P0 | switchTab 调 `transport.attach(id)`（本地 IPC 为空操作）+ onAttached 重放填充无输出标签 |
 | 4 | 未激活标签容器默认可见（堆叠遮挡点击） | P1 | addTabFromInfo 未激活即 `tab.hide()` |
 | 5 | WS 未 open 时 create 消息静默丢弃 + createTab 新鲜度基线被自身更新污染 + favicon 404/CSP 噪音 | P1 | outbox 缓冲冲刷 / 基线快照 / 内联 icon |
-| 6 | **每次刷新新建标签**（用户实测报告）：`listTabs()` 在 socket 未 OPEN 时直接返回空缓存 → `init()` 误判"服务端无会话"而建新标签 | P1 | listTabs 改为有界等待连接建立后再询问服务端（超时/主动关闭才回退缓存）；e2e 新增用例"刷新后恢复且不新建"，12/12 ×3 连跑 |
+| 6 | **每次刷新新建标签**（用户实测报告）：`listTabs()` 在 socket 未 OPEN 时直接返回空缓存 → `init()` 误判"服务端无会话"而建新标签 | P1 | listTabs 改为有界等待连接建立后再询问服务端（超时/主动关闭才回退缓存）；e2e 用例"刷新后恢复且不新建"，12/12 ×3 连跑 |
+| 7 | **刷新向终端注入 `1;2c` 垃圾**（用户实测报告）：重放缓冲里的陈旧终端能力查询（DA/DSR/DECRQM/OSC 颜色查询；Claude Code 启动即发）被新 xterm 自动应答，应答被当作键盘输入写进 PTY | P1 | `SessionRegistry.getReplay()` 统一净化（单一出口，覆盖 WS attach 与本地 TABS_GET_REPLAY 两条路）；registry 单测（查询剥除/数据保留/OSC 非查询保留）+ e2e 差分用例"刷新零新增注入"，13/13 ×2 |
 
 排查侧记：曾疑似"第三次 spawn 死锁"，最终判定为**系统高负载下 fork()
 偶发慢启动（>10s）+ 测试轮询窗口过短**造成的假象——放宽到 30s 并修正

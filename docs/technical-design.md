@@ -170,6 +170,15 @@ export interface TerminalTransport {
   携带 activate 意图仍需 `switchTab`（广播可能先于 createTab 响应以
   "未激活"身份收养该会话）。
 
+`getReplay()` 是重放的唯一出口（WS `attached` 与本地 `TABS_GET_REPLAY`
+共用），内建**陈旧查询净化**：剥除 DA1/DA2/XTVERSION/DSR/DECRQM/OSC
+颜色查询等终端能力询问，普通输出与 OSC 设置原样保留——否则新 xterm 会
+自动应答重放里的陈旧查询，把应答（如 `ESC[?1;2c`）当键盘输入注入正在
+运行的程序（bash 回显为 `1;2c` 垃圾；Claude Code 启动即发此类查询，
+故网页每次刷新必现）。已知固有限制（P2 后续）：查询为**活输出**时，
+所有当时在线的已连接客户端（本地窗口+网页）会各自应答一次——多读端
+架构固有，彻底方案是把查询应答上移到服务端（tmux 式），暂未实施。
+
 - `LocalIpcTransport`：包装现有 `window.electronAPI`（preload 不动）；
   `attach/detach` 为空实现（本地窗口始终全量接收广播，行为与现状一致）；
   剪贴板直通 Electron clipboard。
