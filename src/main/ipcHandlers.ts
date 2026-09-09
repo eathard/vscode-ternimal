@@ -1,5 +1,10 @@
+// IPC handlers (M1 refactor, technical design §2.3):
+// All PTY traffic now flows through the SessionRegistry; events fan out to
+// the local window. The window reference is an accessor (not a captured
+// BrowserWindow) so handlers survive window close/reopen (M4 tray residency).
+
 import { ipcMain, BrowserWindow } from 'electron';
-import { PtyManager } from './ptyManager';
+import { SessionRegistry } from './sessionRegistry';
 import {
   IPC,
   SpawnRequest,
@@ -8,38 +13,52 @@ import {
   KillPayload,
 } from '../shared/ipcChannels';
 
-export function registerIpcHandlers(ptyManager: PtyManager, mainWindow: BrowserWindow): void {
+export function registerIpcHandlers(
+  registry: SessionRegistry,
+  getWindow: () => BrowserWindow | null
+): void {
   const sendToRenderer = (channel: string, ...args: unknown[]) => {
-    if (!mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(channel, ...args);
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, ...args);
     }
+    // Window closed (M4: tray residency) → fan-out degrades to WS-only; the
+    // registry and its buffers keep running untouched.
   };
 
-  // Forward PTY events to renderer
-  ptyManager.on('data', (payload) => sendToRenderer(IPC.PTY_ON_DATA, payload));
-  ptyManager.on('exit', (payload) => sendToRenderer(IPC.PTY_ON_EXIT, payload));
-  ptyManager.on('title', (payload) => sendToRenderer(IPC.PTY_ON_TITLE, payload));
+  // Forward session events to the local renderer
+  registry.on('data', (payload) => sendToRenderer(IPC.PTY_ON_DATA, payload));
+  registry.on('exit', (payload) => sendToRenderer(IPC.PTY_ON_EXIT, payload));
+  registry.on('title', (payload) => sendToRenderer(IPC.PTY_ON_TITLE, payload));
+  registry.on('tabs', (tabs) => sendToRenderer(IPC.TABS_ON_CHANGE, tabs));
 
-  // Spawn a new PTY process
+  // Create a session (ID is generated server-side; SpawnRequest.id ignored)
   ipcMain.handle(IPC.PTY_SPAWN, async (_event, request: SpawnRequest) => {
-    const ptyProcess = ptyManager.spawn(request);
-    return { pid: ptyProcess.pid };
+    return registry.create(request);
   });
 
-  // Write data to PTY
+  // Write data to a session
   ipcMain.on(IPC.PTY_WRITE, (_event, payload: WritePayload) => {
-    ptyManager.write(payload.id, payload.data);
+    registry.write(payload.id, payload.data);
   });
 
-  // Resize PTY
+  // Resize a session (debounced + last-writer-wins inside the registry)
   ipcMain.on(IPC.PTY_RESIZE, (_event, payload: ResizePayload) => {
-    ptyManager.resize(payload.id, payload.cols, payload.rows);
+    registry.resize(payload.id, payload.cols, payload.rows);
   });
 
-  // Kill PTY
+  // Kill a session
   ipcMain.on(IPC.PTY_KILL, (_event, payload: KillPayload) => {
-    ptyManager.kill(payload.id);
+    registry.kill(payload.id);
   });
+
+  // List sessions (window startup restore / refresh)
+  ipcMain.handle(IPC.TABS_LIST, async () => registry.list());
+
+  // Replay snapshot (M4 TC-M4-03): a reopened window restores scrollback.
+  ipcMain.handle(IPC.TABS_GET_REPLAY, async (_event, id: string) =>
+    registry.getReplay(id)
+  );
 
   // Get default shell
   ipcMain.handle(IPC.GET_DEFAULT_SHELL, async () => {

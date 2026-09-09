@@ -1,41 +1,30 @@
+// TerminalTab (M1 refactor): one tab = one xterm bound to a server-side
+// session. The session is created by TerminalApp via transport.createTab();
+// this class only wires UI ⇄ transport streams. No window.electronAPI use.
+import { SessionInfo } from '../shared/ipcChannels';
+import { getTransport } from './transport';
 import { XtermWrapper } from './xtermWrapper';
-
-declare global {
-  interface Window {
-    electronAPI: {
-      ptySpawn: (request: { id: string; shell?: string; cwd?: string; cols: number; rows: number }) => Promise<{ pid: number }>;
-      ptyWrite: (id: string, data: string) => void;
-      ptyResize: (id: string, cols: number, rows: number) => void;
-      ptyKill: (id: string) => void;
-      onPtyData: (callback: (payload: { id: string; data: string }) => void) => () => void;
-      onPtyExit: (callback: (payload: { id: string; exitCode: number }) => void) => () => void;
-      onPtyTitle: (callback: (payload: { id: string; title: string }) => void) => () => void;
-      getDefaultShell: () => Promise<string>;
-      clipboardWrite: (text: string) => void;
-      clipboardRead: () => Promise<string>;
-    };
-  }
-}
 
 export class TerminalTab {
   readonly id: string;
   readonly wrapper: XtermWrapper;
   readonly container: HTMLElement;
-  private title: string = 'Terminal';
+  private title: string;
   private alive: boolean = true;
   private unsubs: (() => void)[] = [];
 
   onExit: ((tab: TerminalTab) => void) | null = null;
   onTitleChange: ((tab: TerminalTab, title: string) => void) | null = null;
+  /** True once any output (live or replay) has been written — replay guard. */
+  hasOutput = false;
 
   constructor(
-    id: string,
+    info: SessionInfo,
     parentContainer: HTMLElement,
-    theme?: Record<string, string>,
-    shell?: string,
-    cwd?: string
+    theme?: Record<string, string>
   ) {
-    this.id = id;
+    this.id = info.id;
+    this.title = info.title || 'Terminal';
 
     // Create wrapper
     this.wrapper = new XtermWrapper({ theme });
@@ -43,73 +32,74 @@ export class TerminalTab {
     // Create DOM container
     this.container = document.createElement('div');
     this.container.className = 'terminal-instance';
-    this.container.dataset.tabId = id;
+    this.container.dataset.tabId = this.id;
     parentContainer.appendChild(this.container);
 
     // Attach xterm to DOM
     this.wrapper.attachToDom(this.container);
 
+    const transport = getTransport();
+
     // Wire bidirectional data flow (VS Code terminalInstance.ts:856-862 pattern)
-    // xterm -> PTY (user input)
+    // xterm -> session (user input)
     this.wrapper.onData((data) => {
       if (this.alive) {
-        window.electronAPI.ptyWrite(id, data);
+        transport.input(this.id, data);
       }
     });
 
-    // PTY -> xterm (shell output)
-    const unsubData = window.electronAPI.onPtyData((payload) => {
-      if (payload.id === id) {
-        this.wrapper.write(payload.data);
-      }
-    });
-    this.unsubs.push(unsubData);
-
-    // PTY exit
-    const unsubExit = window.electronAPI.onPtyExit((payload) => {
-      if (payload.id === id) {
-        this.alive = false;
-        this.wrapper.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`);
-        if (this.onExit) {
-          this.onExit(this);
+    // session -> xterm (shell output), filtered by id (broadcast semantics)
+    this.unsubs.push(
+      transport.onData((payload) => {
+        if (payload.id === this.id) {
+          this.hasOutput = true;
+          this.wrapper.write(payload.data);
         }
-      }
-    });
-    this.unsubs.push(unsubExit);
+      })
+    );
 
-    // PTY title
-    const unsubTitle = window.electronAPI.onPtyTitle((payload) => {
-      if (payload.id === id) {
-        this.title = payload.title;
-        if (this.onTitleChange) {
-          this.onTitleChange(this, payload.title);
+    // session exit
+    this.unsubs.push(
+      transport.onExit((payload) => {
+        if (payload.id === this.id) {
+          this.alive = false;
+          this.wrapper.write(`\r\n[Process exited with code ${payload.exitCode}]\r\n`);
+          if (this.onExit) {
+            this.onExit(this);
+          }
         }
-      }
-    });
-    this.unsubs.push(unsubTitle);
+      })
+    );
 
-    // Resize -> PTY
+    // session title
+    this.unsubs.push(
+      transport.onTitle((payload) => {
+        if (payload.id === this.id) {
+          this.title = payload.title;
+          if (this.onTitleChange) {
+            this.onTitleChange(this, payload.title);
+          }
+        }
+      })
+    );
+
+    // xterm resize -> session (fit fires right after attachToDom, syncing
+    // the registry's initial 80x24 to the real viewport)
     this.wrapper.onResize((cols, rows) => {
       if (this.alive) {
-        window.electronAPI.ptyResize(id, cols, rows);
+        transport.resize(this.id, cols, rows);
       }
-    });
-
-    // Spawn the PTY process
-    const dims = this.wrapper.getDimensions();
-    window.electronAPI.ptySpawn({
-      id,
-      shell,
-      cwd,
-      cols: dims.cols,
-      rows: dims.rows,
-    }).catch((err) => {
-      console.error('[Ternimal] PTY spawn failed:', err);
     });
   }
 
   getTitle(): string {
     return this.title;
+  }
+
+  /** Write scrollback/history directly (M4 replay restore on reopen). */
+  write(data: string): void {
+    if (data) this.hasOutput = true;
+    this.wrapper.write(data);
   }
 
   show(): void {
@@ -125,10 +115,10 @@ export class TerminalTab {
     this.wrapper.focus();
   }
 
+  /** Local UI teardown only — session kill is TerminalApp's decision. */
   dispose(): void {
     this.alive = false;
     this.unsubs.forEach((unsub) => unsub());
-    window.electronAPI.ptyKill(this.id);
     this.wrapper.dispose();
     this.container.remove();
   }

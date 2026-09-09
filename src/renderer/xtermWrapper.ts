@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { getTransport } from './transport';
 
 export interface IXtermWrapper {
   terminal: Terminal;
@@ -76,14 +77,18 @@ export class XtermWrapper implements IXtermWrapper {
     // Initial fit
     this.fitAddon.fit();
 
-    // Right-click copy/paste
+    // Right-click copy/paste — via the transport seam so the web client
+    // (M2) gets clipboard behavior too, not just Electron.
     this.terminal.element?.addEventListener('contextmenu', (e: MouseEvent) => {
       e.preventDefault();
+      // Resolved lazily: transport is installed by the entry point before
+      // user interaction, and this keeps module-load order forgiving.
+      const transport = getTransport();
       if (this.terminal.hasSelection()) {
-        window.electronAPI.clipboardWrite(this.terminal.getSelection());
+        transport.clipboardWrite(this.terminal.getSelection());
         this.terminal.clearSelection();
       } else {
-        window.electronAPI.clipboardRead().then((text: string) => {
+        transport.clipboardRead().then((text: string) => {
           if (text) {
             this.terminal.paste(text);
           }

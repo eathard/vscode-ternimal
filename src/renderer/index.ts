@@ -1,6 +1,11 @@
 import './style.css';
 import '@xterm/xterm/css/xterm.css';
+import { setTransport } from './transport';
+import { LocalIpcTransport } from './transport/localIpcTransport';
 import { TerminalApp } from './terminalApp';
+
+// Electron entry: install the IPC transport before any UI boots.
+setTransport(new LocalIpcTransport());
 
 window.onerror = (msg, src, line, col, err) => {
   console.error('[Ternimal] Uncaught error:', msg, src, line, col, err);

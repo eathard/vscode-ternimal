@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener(channel, subscription);
   },
   // Typed helpers
-  ptySpawn: (request: { id: string; shell?: string; cwd?: string; cols: number; rows: number }) => {
+  ptySpawn: (request: { shell?: string; cwd?: string; cols: number; rows: number }) => {
     return ipcRenderer.invoke(IPC.PTY_SPAWN, request);
   },
   ptyWrite: (id: string, data: string) => {
@@ -40,6 +40,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_event: unknown, payload: { id: string; title: string }) => callback(payload);
     ipcRenderer.on(IPC.PTY_ON_TITLE, handler);
     return () => ipcRenderer.removeListener(IPC.PTY_ON_TITLE, handler);
+  },
+  tabsList: () => {
+    return ipcRenderer.invoke(IPC.TABS_LIST);
+  },
+  tabsGetReplay: (id: string) => {
+    return ipcRenderer.invoke(IPC.TABS_GET_REPLAY, id) as Promise<string>;
+  },
+  onTabsChange: (callback: (tabs: unknown[]) => void) => {
+    const handler = (_event: unknown, tabs: unknown[]) => callback(tabs);
+    ipcRenderer.on(IPC.TABS_ON_CHANGE, handler);
+    return () => ipcRenderer.removeListener(IPC.TABS_ON_CHANGE, handler);
   },
   getDefaultShell: () => {
     return ipcRenderer.invoke(IPC.GET_DEFAULT_SHELL);

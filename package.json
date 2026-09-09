@@ -4,16 +4,22 @@
   "description": "Standalone terminal emulator built with xterm.js + node-pty (based on VS Code terminal architecture)",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "webpack --config webpack.main.config.js && webpack --config webpack.renderer.config.js",
+    "build": "webpack --config webpack.main.config.js && webpack --config webpack.renderer.config.js && webpack --config webpack.web.config.js",
     "build:main": "webpack --config webpack.main.config.js",
     "build:renderer": "webpack --config webpack.renderer.config.js",
-    "start": "npm run build && electron .",
-    "dev": "webpack --config webpack.main.config.js && webpack --config webpack.renderer.config.js && electron .",
+    "build:web": "webpack --config webpack.web.config.js",
+    "start": "npm run build && electron . --no-sandbox",
+    "dev": "webpack --config webpack.main.config.js && webpack --config webpack.renderer.config.js && electron . --no-sandbox",
     "rebuild": "electron-rebuild",
+    "verify:m1": "node scripts/verify-ringbuffer.mjs && node scripts/verify-registry.mjs",
+    "verify:m2": "node scripts/verify-ws-protocol.mjs",
     "pack": "npm run build && electron-builder --win --linux",
     "pack:win": "npm run build && electron-builder --win",
     "pack:linux": "npm run build && electron-builder --linux",
-    "postinstall": ""
+    "postinstall": "",
+    "verify:m3": "node scripts/verify-ratelimit.mjs && node scripts/verify-ws-protocol.mjs",
+    "verify:m4": "node scripts/verify-reconnect.mjs",
+    "verify:browser": "node scripts/verify-browser-e2e.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
@@ -21,9 +27,12 @@
     "@xterm/addon-unicode11": "^0.8.0",
     "@xterm/addon-webgl": "^0.18.0",
     "@xterm/xterm": "^5.5.0",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "copy-webpack-plugin": "^12.0.0",
     "css-loader": "^7.1.0",
     "electron": "^34.5.8",
@@ -32,6 +41,7 @@
     "html-webpack-plugin": "^5.6.0",
     "mini-css-extract-plugin": "^2.9.0",
     "png-to-ico": "^3.0.1",
+    "puppeteer-core": "^25.10.0",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.7.0",
