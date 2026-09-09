@@ -29,6 +29,8 @@ linux:
   synopsis: Standalone terminal emulator
   description: A standalone terminal emulator built with xterm.js and node-pty, based on VS Code terminal architecture.
   executableName: ternimal
+deb:
+  afterInstall: build/after-install.sh
 files:
   - dist/**/*
   - node_modules/node-pty/**/*

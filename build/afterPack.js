@@ -28,8 +28,15 @@ EXEC_DIR="$(dirname "$(readlink -f "$0")")"
 MAX_RETRIES=3
 RETRY_DELAY=0.3
 
+# Prepend --no-sandbox unless the caller already passed it
+ARGS=("$@")
+for a in "$@"; do
+  [ "$a" = "--no-sandbox" ] && HAS_NO_SANDBOX=1
+done
+[ -n "$HAS_NO_SANDBOX" ] || ARGS=("--no-sandbox" "\${ARGS[@]}")
+
 for i in $(seq 1 $MAX_RETRIES); do
-  "$EXEC_DIR/ternimal.real" --no-sandbox "$@"
+  "$EXEC_DIR/ternimal.real" "\${ARGS[@]}"
   EXIT=$?
   # Exit code 133 (SIGTRAP) or 134 (SIGABRT) = Chromium startup crash, retry
   if [ $EXIT -ne 133 ] && [ $EXIT -ne 134 ]; then
