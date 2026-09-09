@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { setTransport } from '../renderer/transport';
 import { WebSocketTransport } from '../renderer/transport/webSocketTransport';
 import { TerminalApp } from '../renderer/terminalApp';
+import { mountSoftKeys } from './softKeys';
 
 function wsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -26,7 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('app');
   if (root) {
     try {
-      new TerminalApp(root);
+      const app = new TerminalApp(root);
+      // Soft keyboard (Ctrl/Alt/Shift combos + Esc/Tab) — web only.
+      mountSoftKeys(app);
     } catch (err) {
       console.error('[Ternimal/Web] Failed to create TerminalApp:', err);
       document.body.innerHTML =

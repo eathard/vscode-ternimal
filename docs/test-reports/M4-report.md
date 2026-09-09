@@ -76,6 +76,16 @@ verify-reconnect.mjs 场景（TC-M4-05/08 核心，真传输类）：
 二维码。`/login` 保留为 GET 别名。测试全部随迁：verify:m3 31 项、
 smoke、browser-e2e（新增"QR 式片段 URL 自动登录"用例，13/13 ×N）。
 
+## 9. 补遗：Web 端软键盘（Ctrl/Alt/Shift 组合键，用户需求迭代）
+
+移动端无法发送组合键 → 可拖动悬浮条（Ctrl/Alt/Shift 粘滞开关 +
+Esc/Tab 直发，位置记忆 localStorage）。字节级映射（shared/
+modifierKeys.ts 纯函数）注入 onData 管道，不伪造事件。验证：
+verify:softkeys 单测全过 + browser-e2e 三项（悬浮条渲染 / 点亮 Ctrl 敲
+c 真实中断 `sleep 30` 出 `^C` / 下一键普通 `x` 无 `^X`），16/16。
+CDP 合成鼠标下 pointerdown-preventDefault 会吞 click——按钮动作改挂
+pointerdown（触摸端亦更即时）。
+
 ## 7. 补遗：真浏览器端到端验证（Chrome + puppeteer-core/CDP）
 
 自动化到浏览器层（此前 WS/HTTP 客户端测不到：资源加载、表单 UX、

@@ -5,10 +5,16 @@
 //   created/removed tabs appear/disappear here in M2)
 import { SessionInfo } from '../shared/ipcChannels';
 import { getTransport } from './transport';
-import { TerminalTab } from './terminalTab';
+import { TerminalTab, setInputTransform } from './terminalTab';
 import { TabBar } from './tabBar';
 import { SearchBar } from './searchBar';
 import { ThemeManager } from './themeManager';
+import {
+  ModifierState,
+  NO_MODIFIERS,
+  applyModifiers,
+  hasModifiers,
+} from '../shared/modifierKeys';
 
 export class TerminalApp {
   private tabs: Map<string, TerminalTab> = new Map();
@@ -18,8 +24,24 @@ export class TerminalApp {
   private themeManager: ThemeManager;
   private terminalContainer: HTMLElement;
 
+  // Soft-keyboard modifier state (web only; local window never sets it).
+  // One-shot semantics: the next single-char keystroke consumes it.
+  private pendingMods: ModifierState = { ...NO_MODIFIERS };
+  /** UI refresh hook — the soft-keys bar re-lights its buttons. */
+  onPendingModsChange: (() => void) | null = null;
+
   constructor(root: HTMLElement) {
     const transport = getTransport();
+
+    // Soft-keyboard input transform: map the next keystroke under the
+    // pending Ctrl/Alt/Shift combo into terminal bytes (identity locally
+    // — nothing ever sets pendingMods there).
+    setInputTransform((data) => {
+      if (!hasModifiers(this.pendingMods)) return data;
+      const r = applyModifiers(data, this.pendingMods);
+      if (r.consumed) this.clearPendingMods();
+      return r.data;
+    });
 
     // Theme manager
     this.themeManager = new ThemeManager();
@@ -157,6 +179,10 @@ export class TerminalApp {
   switchTab(id: string): void {
     if (!this.tabs.has(id)) return;
 
+    // Pending soft-key combos never survive a tab switch (one-shot
+    // semantics belong to the tab the user is looking at).
+    this.clearPendingMods();
+
     // Hide current
     if (this.activeTabId) {
       const current = this.tabs.get(this.activeTabId);
@@ -180,6 +206,32 @@ export class TerminalApp {
     if (!this.tabs.has(id)) return;
     getTransport().closeTab(id);
     this.disposeTab(id);
+  }
+
+  // ---- soft keyboard (web only; see modifierKeys.ts) ----
+
+  getPendingMods(): ModifierState {
+    return { ...this.pendingMods };
+  }
+
+  setPendingMods(mods: ModifierState): void {
+    this.pendingMods = { ...mods };
+    if (this.onPendingModsChange) this.onPendingModsChange();
+  }
+
+  clearPendingMods(): void {
+    if (!hasModifiers(this.pendingMods)) return;
+    this.pendingMods = { ...NO_MODIFIERS };
+    if (this.onPendingModsChange) this.onPendingModsChange();
+  }
+
+  /** Direct key tap (Esc/Tab buttons): mapped under pending mods, sent to
+   *  the ACTIVE tab, and always consumes the pending combo. */
+  sendDirect(data: string): void {
+    if (!this.activeTabId) return;
+    const r = applyModifiers(data, this.pendingMods);
+    getTransport().input(this.activeTabId, r.data);
+    this.clearPendingMods();
   }
 
   /** Local-only teardown: unsubscribe, remove DOM, fix active tab. */

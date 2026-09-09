@@ -38,7 +38,7 @@
 | `scripts/verify-ratelimit.mjs` | 5 次/分阈值触发与 1 分钟解锁 | 同上 |
 | `scripts/verify-ws-protocol.mjs` | 未认证拒握手、list/attach/input/resize、畸形消息断链、心跳超时 | 同上 |
 | `scripts/verify-reconnect.mjs` | 模拟断链→重连→attach→replay 与断链前输出衔接 | 同上 |
-|  `scripts/verify-browser-e2e.mjs` | **真浏览器全流程**（`npm run verify:browser`）：未认证重定向、鉴权页与指纹核对、错令牌/**二维码式 `#T=` 片段 URL 自动登录**、标签栏与 UI 按钮、cookie 三属性、xterm 键入→PTY→bash→渲染回显、**刷新后恢复且不新建标签、刷新零陈旧查询注入（无 `1;2c` 垃圾）**；产截图 `docs/test-reports/screenshots/` | 同上 |
+|  `scripts/verify-browser-e2e.mjs` | **真浏览器全流程**（`npm run verify:browser`）：未认证重定向、鉴权页与指纹核对、错令牌/**二维码式 `#T=` 片段 URL 自动登录**、标签栏与 UI 按钮、cookie 三属性、xterm 键入→PTY→bash→渲染回显、**刷新后恢复且不新建标签、刷新零陈旧查询注入（无 `1;2c` 垃圾）**、软键盘真实 Ctrl+C 中断 sleep + 一次性复位；产截图 `docs/test-reports/screenshots/` | 同上 |
 
 脚本运行前置：`verify-ringbuffer/registry/ratelimit/ws-protocol/reconnect`
 仅依赖 `node`（≥18）与仓库 `node_modules`，自起最小 Registry/Server 实例；

@@ -171,6 +171,16 @@ export interface TerminalTransport {
   携带 activate 意图仍需 `switchTab`（广播可能先于 createTab 响应以
   "未激活"身份收养该会话）。
 
+**Web 软键盘（`src/web/softKeys.ts`，仅 web 束挂载）**：可拖动悬浮条
+（Ctrl/Alt/Shift 粘滞开关 + Esc/Tab 直发键），位置钳制于视口并存
+localStorage。组合翻译用**字节级映射**（`src/shared/modifierKeys.ts`
+纯函数，Ctrl+a..z→\x01..\x1a、Alt→ESC 前缀、Shift+Tab→\x1b[Z、
+Ctrl+Shift≡Ctrl、未映射原样透传），经 `setInputTransform` 缝注入
+TerminalTab 的 onData 管道——不伪造键盘事件，本地端恒等。一次性语义：
+下一个单字符击键消耗组合并复位；粘贴/IME 多字符不消耗；切标签/失焦
+清零。按钮动作挂 pointerdown（触摸即时且防 CDP 合成 click 被吞），
+preventDefault 保证 xterm 焦点不丢。
+
 `getReplay()` 是重放的唯一出口（WS `attached` 与本地 `TABS_GET_REPLAY`
 共用），内建**陈旧查询净化**：剥除 DA1/DA2/XTVERSION/DSR/DECRQM/OSC
 颜色查询等终端能力询问，普通输出与 OSC 设置原样保留——否则新 xterm 会

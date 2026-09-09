@@ -19,7 +19,8 @@
     "postinstall": "",
     "verify:m3": "node scripts/verify-ratelimit.mjs && node scripts/verify-ws-protocol.mjs",
     "verify:m4": "node scripts/verify-reconnect.mjs",
-    "verify:browser": "node scripts/verify-browser-e2e.mjs"
+    "verify:browser": "node scripts/verify-browser-e2e.mjs",
+    "verify:softkeys": "node scripts/verify-softkeys.mjs"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",

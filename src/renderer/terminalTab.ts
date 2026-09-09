@@ -5,6 +5,14 @@ import { SessionInfo } from '../shared/ipcChannels';
 import { getTransport } from './transport';
 import { XtermWrapper } from './xtermWrapper';
 
+// Optional input transform (web soft-keyboard modifier mapping, one-shot
+// Ctrl/Alt/Shift combos). Set by TerminalApp once; null locally.
+let inputTransform: ((data: string) => string) | null = null;
+
+export function setInputTransform(fn: ((data: string) => string) | null): void {
+  inputTransform = fn;
+}
+
 export class TerminalTab {
   readonly id: string;
   readonly wrapper: XtermWrapper;
@@ -41,10 +49,10 @@ export class TerminalTab {
     const transport = getTransport();
 
     // Wire bidirectional data flow (VS Code terminalInstance.ts:856-862 pattern)
-    // xterm -> session (user input)
+    // xterm -> session (user input; passes the soft-keyboard transform)
     this.wrapper.onData((data) => {
       if (this.alive) {
-        transport.input(this.id, data);
+        transport.input(this.id, inputTransform ? inputTransform(data) : data);
       }
     });
 

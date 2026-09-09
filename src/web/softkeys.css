@@ -1,0 +1,57 @@
+/* SoftKeys — draggable floating bar (web bundle only). */
+#softkeys {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 22px;
+  background: rgba(37, 37, 38, 0.92);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  border: 1px solid #3c3c3c;
+  z-index: 1000;
+  touch-action: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 16px);
+}
+
+#softkeys button {
+  font: 13px/1 system-ui, sans-serif;
+  padding: 8px 12px;
+  border: 1px solid #3c3c3c;
+  border-radius: 14px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#softkeys button:active {
+  background: #333;
+}
+
+#softkeys .sk-handle {
+  padding: 8px 6px;
+  border: none;
+  background: transparent;
+  color: #6a6a6a;
+  cursor: grab;
+}
+
+#softkeys .sk-mod.sk-active {
+  background: #0e639c;
+  border-color: #1177bb;
+  color: #fff;
+}
+
+#softkeys .sk-direct {
+  border-color: #555;
+}
+
+#softkeys .sk-sep {
+  width: 1px;
+  height: 22px;
+  background: #3c3c3c;
+  margin: 0 4px;
+}

@@ -248,6 +248,56 @@ try {
   );
   check('input→PTY→bash→xterm render roundtrip', echoed === 'yes');
 
+  // 7.5 Soft keyboard: Ctrl tap + letter must deliver a REAL Ctrl+C to
+  //     bash (one-shot: the modifier resets after the keystroke).
+  check(
+    'softkeys floating bar rendered (Ctrl/Alt/Shift/Esc/Tab)',
+    (await page.$('#softkeys')) !== null &&
+      (await page.$$('#softkeys .sk-mod')).length === 3 &&
+      (await page.$$('#softkeys .sk-direct')).length === 2
+  );
+  await page.keyboard.type('sleep 30\r');
+  await poll(
+    page,
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').includes('sleep 30') ? 'y' : ''`,
+    'sleep command echoed',
+    15000
+  );
+  await page.click('#softkeys .sk-mod[data-mod=ctrl]');
+  const ctrlLit = await page.evaluate(
+    `document.querySelector('#softkeys .sk-mod[data-mod=ctrl]').classList.contains('sk-active')`
+  );
+  // Belt and braces: the tap must never have stolen terminal focus.
+  await page.evaluate(
+    `document.querySelector('.terminal-instance:not([style*="none"]) .xterm-helper-textarea')?.focus()`
+  );
+  await sleep(200);
+  await page.keyboard.type('c');
+  const interrupted = await poll(
+    page,
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').includes('^C') ? 'y' : ''`,
+    'bash reports ^C interrupt',
+    15000
+  );
+  check(
+    'softkey Ctrl+c interrupts sleep (^C shown, button lit then reset)',
+    ctrlLit === true &&
+      interrupted === 'y' &&
+      (await page.evaluate(
+        `!document.querySelector('#softkeys .sk-mod[data-mod=ctrl]').classList.contains('sk-active')`
+      ))
+  );
+  // One-shot: the NEXT plain letter must arrive unmodified (no ^X junk).
+  await page.keyboard.type('x');
+  const plainX = await poll(
+    page,
+    `Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').split('x').length - 1 > 0 && !Array.from(document.querySelectorAll('.xterm-rows')).map(r => r.textContent).join('').includes('^X') ? 'y' : ''`,
+    'plain x echoed, no ^X',
+    10000
+  );
+  check('one-shot reset: next keystroke arrives unmodified (no ^X)', plainX === 'y');
+  await page.keyboard.type('\x15'); // Ctrl+U: clear the pending line (pure input, no assertion)
+
   // 8. Reload regression: a page refresh must RESTORE sessions, never
   //    spawn a new one (listTabs used to resolve from an empty cache while
   //    the socket was still connecting). Also: seed a stale DA query in
