@@ -19,6 +19,7 @@ import * as path from 'path';
 import { URL } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { SessionRegistry } from './sessionRegistry';
+import { t, Locale, detectLocale } from '../shared/i18n';
 import { AuthManager, SESSION_COOKIE } from './authManager';
 import type { SessionInfo, DataPayload, ExitPayload, TitlePayload } from '../shared/ipcChannels';
 import {
@@ -35,6 +36,8 @@ import {
 } from '../shared/wsProtocol';
 
 export interface RemoteServerOptions {
+  /** UI locale for served pages (default: env TERNIMAL_LOCALE, else en). */
+  locale?: Locale;
   registry: SessionRegistry;
   auth: AuthManager;
   tls: { cert: string; key: string };
@@ -85,10 +88,12 @@ export class RemoteServer {
   private unsubscribeRegistry: (() => void)[] = [];
   private actualPort = 0;
   certFingerprint = ''; // set by owner for the login page (WBS-M3-A display)
+  locale: Locale = detectLocale(process.env.TERNIMAL_LOCALE);
 
   constructor(opts: RemoteServerOptions) {
     this.registry = opts.registry;
     this.auth = opts.auth;
+    this.locale = opts.locale ?? this.locale;
     this.tls = opts.tls;
     this.port = opts.port ?? 8443;
     this.host = opts.host ?? '0.0.0.0';
@@ -202,7 +207,7 @@ export class RemoteServer {
         const badToken = url.searchParams.get('e') === '1';
         const locked = this.auth.isLocked(ip);
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(authPageHtml(this.certFingerprint, badToken, locked));
+        res.end(authPageHtml(this.locale, this.certFingerprint, badToken, locked));
         return;
       }
       if (req.method === 'POST') {
@@ -501,14 +506,15 @@ export class RemoteServer {
  *  Auto-exchanges the URL fragment "#T=<token>" (from the tray QR code /
  *  copied access link — the fragment never reaches the server) for a
  *  session cookie, then relocates to /. Manual paste kept as fallback. */
-function authPageHtml(fingerprint: string, badToken: boolean, locked: boolean): string {
+function authPageHtml(locale: Locale, fingerprint: string, badToken: boolean, locked: boolean): string {
   const fp = fingerprint || '(unavailable)';
+  const L = locale;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ternimal — Sign in</title>
+<title>${t(L, 'auth.title')}</title>
 <style>
   body { background:#1e1e1e; color:#d4d4d4; font-family:system-ui,sans-serif;
          display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
@@ -528,12 +534,12 @@ function authPageHtml(fingerprint: string, badToken: boolean, locked: boolean): 
 </head>
 <body>
   <form class="card" method="POST" action="/auth" id="f">
-    <h1>Ternimal Remote</h1>
-    <input type="text" name="token" placeholder="Access token (or scan the QR code)" autofocus ${locked ? 'disabled' : ''}>
-    <button type="submit" ${locked ? 'disabled' : ''}>${locked ? 'Locked — retry in a minute' : 'Sign in'}</button>
-    <div class="err">${badToken ? 'Wrong token' : ''}${locked ? 'Too many attempts' : ''}</div>
-    <div class="hint">扫码或粘贴带令牌的访问链接时无需手动输入。</div>
-    <div class="fp"><b>Certificate SHA-256 fingerprint (verify on the host):</b><br>${fp}</div>
+    <h1>${t(L, 'auth.heading')}</h1>
+    <input type="text" name="token" placeholder="${t(L, 'auth.placeholder')}" autofocus ${locked ? 'disabled' : ''}>
+    <button type="submit" ${locked ? 'disabled' : ''}>${locked ? t(L, 'auth.locked') : t(L, 'auth.submit')}</button>
+    <div class="err">${badToken ? t(L, 'auth.wrongToken') : ''}${locked ? t(L, 'auth.tooMany') : ''}</div>
+    <div class="hint">${t(L, 'auth.hint')}</div>
+    <div class="fp"><b>${t(L, 'auth.fpLabel')}</b><br>${fp}</div>
   </form>
   <script>
     (function () {

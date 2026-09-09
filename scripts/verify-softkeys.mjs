@@ -9,12 +9,15 @@ import assert from 'node:assert/strict';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 execSync(
-  'npx tsc src/shared/modifierKeys.ts --outDir dist/verify --rootDir src ' +
+  'npx tsc src/shared/modifierKeys.ts src/shared/i18n.ts --outDir dist/verify --rootDir src ' +
     '--module commonjs --target es2022 --esModuleInterop --skipLibCheck --moduleResolution node',
   { cwd: root, stdio: 'inherit' }
 );
 const { applyModifiers, hasModifiers, NO_MODIFIERS, arrowSequence } = await import(
   pathToFileURL(path.join(root, 'dist/verify/shared/modifierKeys.js')).href
+);
+const { t, detectLocale } = await import(
+  pathToFileURL(path.join(root, 'dist/verify/shared/i18n.js')).href
 );
 
 let failed = 0;
@@ -71,6 +74,12 @@ check('Shift+down → \\e[1;2B', arrowSequence('down', M(false, false, true)) ==
 check('Ctrl+Shift+left → \\e[1;6D', arrowSequence('left', M(true, false, true)) === '\x1b[1;6D');
 check('Ctrl+Alt+Shift+up → \\e[1;8A', arrowSequence('up', M(true, true, true)) === '\x1b[1;8A');
 check('modified arrow ignores application mode (CSI form)', arrowSequence('up', M(true, false, false), true) === '\x1b[1;5A');
+
+// i18n (OSS readiness): zh/en dictionaries with en fallback
+check('detectLocale zh variants → zh', detectLocale('zh-CN') === 'zh' && detectLocale('zh_TW') === 'zh');
+check('detectLocale en/undefined → en', detectLocale('en-US') === 'en' && detectLocale(undefined) === 'en' && detectLocale(null) === 'en');
+check('t() resolves zh and en for same key', t('zh', 'auth.submit') !== t('en', 'auth.submit') && t('en', 'auth.submit') === 'Sign in');
+check('t() falls back to en on unknown key', t('zh', 'nonexistent.key') === 'nonexistent.key');
 
 // Direct-key path (Esc/Tab buttons go through the same table)
 check('Esc direct with no mods → \\x1b', applyModifiers('\x1b', NO_MODIFIERS).data === '\x1b');

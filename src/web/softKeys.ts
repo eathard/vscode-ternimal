@@ -8,6 +8,7 @@
 //   - clears pending combos on tab visibility loss / window blur
 import './softkeys.css';
 import type { TerminalApp } from '../renderer/terminalApp';
+import { t, detectLocale } from '../shared/i18n';
 
 const POS_KEY = 'ternimal-softkeys-pos';
 
@@ -17,10 +18,11 @@ interface SavedPos {
 }
 
 export function mountSoftKeys(app: TerminalApp): HTMLElement {
+  const locale = detectLocale(navigator.language);
   const bar = document.createElement('div');
   bar.id = 'softkeys';
   bar.innerHTML = `
-    <button class="sk-handle" title="拖动" aria-label="拖动">⠿</button>
+    <button class="sk-handle" title="${t(locale, 'sk.drag')}" aria-label="${t(locale, 'sk.drag')}">⠿</button>
     <button class="sk-mod" data-mod="ctrl">Ctrl</button>
     <button class="sk-mod" data-mod="alt">Alt</button>
     <button class="sk-mod" data-mod="shift">Shift</button>

@@ -33,6 +33,7 @@ const electron = spawn(path.join(root, 'node_modules', '.bin', 'electron'), ['.'
     TERNIMAL_PORT: String(PORT),
     TERNIMAL_HOST: '127.0.0.1',
     TERNIMAL_TOKEN: TOKEN,
+    TERNIMAL_LOCALE: 'en',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

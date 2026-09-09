@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --include=dev
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Unit / protocol / reconnect / soft-key suites
+        run: npm run verify
+      # smoke-e2e and verify:browser need a display + system Chrome and
+      # are run manually per docs/verification-standard.md for now.

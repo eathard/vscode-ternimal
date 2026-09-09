@@ -1,7 +1,7 @@
 {
   "name": "ternimal",
   "version": "1.0.0",
-  "description": "Standalone terminal emulator built with xterm.js + node-pty (based on VS Code terminal architecture)",
+  "description": "Multi-tab terminal whose sessions are shared with any LAN browser — QR sign-in, replay-on-reconnect, mobile soft keyboard (Electron + xterm.js + node-pty)",
   "main": "dist/main/main.js",
   "scripts": {
     "build": "webpack --config webpack.main.config.js && webpack --config webpack.renderer.config.js && webpack --config webpack.web.config.js",
@@ -20,7 +20,8 @@
     "verify:m3": "node scripts/verify-ratelimit.mjs && node scripts/verify-ws-protocol.mjs",
     "verify:m4": "node scripts/verify-reconnect.mjs",
     "verify:browser": "node scripts/verify-browser-e2e.mjs",
-    "verify:softkeys": "node scripts/verify-softkeys.mjs"
+    "verify:softkeys": "node scripts/verify-softkeys.mjs",
+    "verify": "npm run verify:m1 && npm run verify:m3 && npm run verify:m4 && npm run verify:softkeys"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",
@@ -53,5 +54,24 @@
   },
   "build": {
     "extends": "electron-builder.yml"
-  }
+  },
+  "license": "MIT",
+  "keywords": [
+    "terminal",
+    "electron",
+    "xterm",
+    "node-pty",
+    "remote-terminal",
+    "web-terminal",
+    "claude-code",
+    "ssh-alternative"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eathard/vscode-ternimal.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eathard/vscode-ternimal/issues"
+  },
+  "homepage": "https://github.com/eathard/vscode-ternimal#readme"
 }

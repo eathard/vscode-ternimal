@@ -74,3 +74,4 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - `vscode-src/` is a placeholder for reference material and is excluded from builds and packaging
 - **`ws` must stay a webpack external** (`webpack.main.config.js`): bundling it deadlocks the main event loop after the first outbound broadcast (documented in `docs/test-reports/` M2 §4). Same for `node-pty`
 - Web bundle is served by the app itself under `/static/` — `webpack.web.config.js` sets `output.publicPath: '/static/'`; relative asset URLs 404 in real browsers
+- User-facing strings live in `src/shared/i18n.ts` (zh/en, `t(locale, key)` with en fallback). Locale = `TERNIMAL_LOCALE` env override, else system (`app.getLocale()` main / `navigator.language` web); tests set `TERNIMAL_LOCALE=en` for deterministic English assertions

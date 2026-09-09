@@ -14,9 +14,12 @@ import * as path from 'path';
 import * as os from 'os';
 import QRCode from 'qrcode';
 import type { AuthManager } from './authManager';
+import { t, Locale } from '../shared/i18n';
 
 export interface TrayDeps {
   auth: AuthManager;
+  /** UI locale (main detects once from app.getLocale()). */
+  locale: Locale;
   /** Actual listen port (may differ from configured when ephemeral). */
   getPort: () => number;
   certFingerprint: string;
@@ -68,23 +71,23 @@ export class TrayController {
     const deps = this.deps;
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: '显示窗口', click: () => deps.showWindow() },
+        { label: t(deps.locale, 'tray.show'), click: () => deps.showWindow() },
         { type: 'separator' },
         {
-          label: '复制访问地址',
+          label: t(deps.locale, 'tray.copyUrl'),
           click: () => {
             clipboard.writeText(this.accessUrl());
           },
         },
         {
-          label: '查看访问信息（二维码）',
+          label: t(deps.locale, 'tray.viewAccess'),
           click: () => {
             void this.showAccessInfo();
           },
         },
         { type: 'separator' },
         {
-          label: '重置访问令牌',
+          label: t(deps.locale, 'tray.rotateToken'),
           click: () => {
             deps.auth.rotateToken();
             this.rebuildMenu();
@@ -93,7 +96,7 @@ export class TrayController {
         },
         { type: 'separator' },
         {
-          label: '退出',
+          label: t(deps.locale, 'tray.quit'),
           click: () => {
             void deps.shutdown();
           },
@@ -126,6 +129,7 @@ export class TrayController {
       token: this.deps.auth.getToken(),
       fingerprint: this.deps.certFingerprint,
       qrDataUrl,
+      locale: this.deps.locale,
     });
     const encoded = 'data:text/html;charset=utf-8;base64,' + Buffer.from(html, 'utf8').toString('base64');
 
@@ -138,7 +142,7 @@ export class TrayController {
     this.infoWindow = new BrowserWindow({
       width: 460,
       height: 640,
-      title: 'Ternimal 访问信息',
+      title: t(this.deps.locale, 'info.title'),
       resizable: false,
       autoHideMenuBar: true,
       backgroundColor: '#1e1e1e',
@@ -166,10 +170,17 @@ function lanIp(): string {
   return '127.0.0.1';
 }
 
-function accessInfoHtml(info: { url: string; token: string; fingerprint: string; qrDataUrl: string }): string {
+function accessInfoHtml(info: {
+  url: string;
+  token: string;
+  fingerprint: string;
+  qrDataUrl: string;
+  locale: Locale;
+}): string {
+  const L = info.locale;
   const qr = info.qrDataUrl
-    ? `<img src="${info.qrDataUrl}" width="320" height="320" alt="访问二维码">`
-    : '<div class="err">（二维码生成失败 — 请使用下方链接/令牌）</div>';
+    ? `<img src="${info.qrDataUrl}" width="320" height="320" alt="QR">`
+    : `<div class="err">${t(L, 'info.qrFailed')}</div>`;
   return `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -189,13 +200,12 @@ function accessInfoHtml(info: { url: string; token: string; fingerprint: string;
 </style>
 </head>
 <body>
-  <h1>手机扫码访问 Ternimal</h1>
+  <h1>${t(L, 'info.heading')}</h1>
   <div class="qr">${qr}</div>
-  <div class="tip">扫码后浏览器将自动完成鉴权（首次需信任自签名证书）。<br>
-    令牌随链接以 URL 片段携带，不会出现在服务器日志中。</div>
-  <div class="row"><b>访问链接（含令牌，可直接复制给内网设备）</b><code>${info.url}</code></div>
-  <div class="row"><b>访问令牌（手动输入用，重置后立即失效）</b><code>${info.token}</code></div>
-  <div class="row"><b>证书 SHA-256 指纹（应与登录页显示一致）</b><code>${info.fingerprint}</code></div>
+  <div class="tip">${t(L, 'info.tip').replace('\n', '<br>')}</div>
+  <div class="row"><b>${t(L, 'info.url')}</b><code>${info.url}</code></div>
+  <div class="row"><b>${t(L, 'info.token')}</b><code>${info.token}</code></div>
+  <div class="row"><b>${t(L, 'info.fp')}</b><code>${info.fingerprint}</code></div>
 </body>
 </html>`;
 }

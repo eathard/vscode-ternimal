@@ -7,6 +7,7 @@ import { ConfigStore } from './configStore';
 import { ensureCertificate } from './certManager';
 import { AuthManager } from './authManager';
 import { TrayController } from './tray';
+import { detectLocale } from '../shared/i18n';
 
 // Disable Chromium sandbox for Linux compatibility with distros like Deepin
 // where the SUID sandbox crashes on startup
@@ -106,6 +107,7 @@ async function startRemoteServer(): Promise<void> {
     port,
     host,
     maxSessions: config.maxSessions,
+    locale: detectLocale(process.env.TERNIMAL_LOCALE ?? app.getLocale()),
   });
   remoteServer.certFingerprint = tls.fingerprint;
   await remoteServer.start();
@@ -122,6 +124,7 @@ async function startRemoteServer(): Promise<void> {
   if (!process.env.TERNIMAL_HEADLESS_TEST) {
     tray = new TrayController({
       auth,
+      locale: detectLocale(process.env.TERNIMAL_LOCALE ?? app.getLocale()),
       getPort: () => remoteServer?.getPort() ?? port,
       certFingerprint: tls.fingerprint,
       showWindow: createWindow,

@@ -1,8 +1,8 @@
 # Ternimal
 
 <p align="center">
-  <b>Standalone Terminal Emulator built with xterm.js + node-pty</b><br>
-  <b>基于 VS Code 终端架构提取的独立终端模拟器</b>
+  <b>Multi-tab terminal that shares its sessions with any browser on your LAN — scan a QR code and your phone is attached to the same tabs the desktop shows.</b><br>
+  <b>多标签终端：扫码即把桌面上的同一组标签共享给局域网内任意浏览器</b>
 </p>
 
 <p align="center">
@@ -15,98 +15,114 @@
 ## English
 
 ### Overview
-Ternimal is a standalone terminal emulator application built on modern web technologies. It extracts the terminal architecture patterns from Visual Studio Code's official codebase, providing a high-performance, feature-rich terminal experience as an independent desktop application.
 
-### Architecture
-This project replicates VS Code's terminal architecture with three core components:
+Ternimal is a standalone terminal emulator (xterm.js + node-pty, VS Code
+terminal patterns) with a remote layer on top: a `SessionRegistry` in the
+main process is the single source of truth, and both the local Electron
+window and browser clients on the LAN/VPN attach to the **same PTY
+sessions** over HTTPS. Sessions survive window close, page refresh and
+network drops — a ring-buffer replay rehydrates scrollback on re-attach.
 
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Frontend** | xterm.js | Terminal rendering with WebGL acceleration |
-| **Backend** | node-pty | Pseudoterminal process management |
-| **Bridge** | Electron IPC | Bidirectional data flow between UI and shell |
+Built for the AI-agent era: run Claude Code (or any CLI) on the desktop,
+supervise it from the couch.
 
-### Key Features
+### Highlights
 
-**Multi-Tab Support**
-- New tab: `Ctrl+Shift+T`
-- Close tab: `Ctrl+W`
-- Switch tabs: `Ctrl+Tab` / `Ctrl+Shift+Tab`
+- **Scan-to-sign-in** — a per-launch 192-bit access token rides in the URL
+  *fragment* (never sent to the server, never logged). The tray shows a QR
+  code; the phone scans it and is in. Token rotates every launch, or on
+  demand from the tray (kills all sessions instantly).
+- **Zero client install** — remote access is a plain HTTPS page; the local
+  window and browsers stay consistent via the same tab list.
+- **Mobile soft keyboard** — draggable floating bar: sticky Ctrl/Alt/Shift
+  (arbitrary combos, one-shot), Esc/Tab and ↑↓←→ keys that follow the
+  terminal's cursor mode (DECCKM). `Ctrl+C`, readline meta-jumps and vim
+  navigation work from a phone.
+- **Privacy-first networking** — self-signed TLS (SHA-256 fingerprint shown
+  on both the sign-in page and the tray — anti-MITM), LAN/VPN only by
+  design, per-IP rate limiting, `HttpOnly`+`Secure`+`SameSite=Strict`
+  cookies, WS upgrade re-validation.
+- **Engineering discipline** — 220+ automated assertions across 6 suites,
+  including a real-Chrome end-to-end run.
 
-**Advanced Rendering**
-- WebGL renderer with automatic DOM fallback
-- Unicode 11 support
-- 256-color and truecolor support
+### Local terminal features
 
-**User Experience**
-- Dark/Light theme toggle: `Ctrl+Shift+L`
-- In-terminal search: `Ctrl+Shift+F`
-- Right-click copy/paste
-- Auto-resize on window change
-- Scrollback buffer (5000 lines)
+| | |
+|---|---|
+| New / close / switch tab | `Ctrl+Shift+T` / `Ctrl+W` / `Ctrl+Tab` |
+| Search / theme toggle | `Ctrl+Shift+F` / `Ctrl+Shift+L` |
+| Rendering | WebGL with automatic DOM fallback, Unicode 11, truecolor |
+| Platforms | Windows (ConPTY) / macOS / Linux (POSIX PTY) |
 
-**Cross-Platform**
-- Windows: PowerShell/CMD with ConPTY support
-- macOS/Linux: Default shell with POSIX PTY
-
-### Installation
+### Quick start
 
 ```bash
-# Clone the repository
 git clone https://github.com/eathard/vscode-ternimal.git
 cd vscode-ternimal
-
-# Install dependencies
-npm install
-
-# Build and run
-npm run dev
-
-# Or build for production
-npm run build
-npm run pack        # Windows installer
+npm install --include=dev   # dev tooling is required for builds
+npm run rebuild             # native modules (node-pty) against Electron
+npm run dev                 # build + launch
 ```
 
-### VS Code Patterns Extracted
+On first launch the app prints the access URL and shows the tray icon.
+Tray menu → **Access info (QR code)** → scan with a phone → trust the
+self-signed certificate (compare fingerprints if paranoid) → you are in.
 
-This project incorporates proven patterns from VS Code's terminal implementation:
+### Verify everything
 
-1. **Bidirectional Data Flow** (`terminalTab.ts:54-64`)
-   - xterm → PTY: User input forwarding
-   - PTY → xterm: Shell output rendering
-
-2. **WebGL Renderer with Fallback** (`xtermWrapper.ts:106-117`)
-   - Attempts WebGL for GPU acceleration
-   - Graceful fallback to DOM renderer on failure
-   - Context loss handling
-
-3. **PTY Resize Guards** (`ptyManager.ts:70-72`)
-   - Prevents zero/negative dimension errors
-   - Pattern from `terminalProcess.ts:532-568`
-
-4. **Windows Process Timeout** (`ptyManager.ts:78-95`)
-   - Handles Windows ConPTY hang on kill
-   - 5-second timeout with force kill
-
-### Project Structure
-
+```bash
+npm run verify                  # unit + protocol + reconnect + soft-keys
+node scripts/smoke-e2e.mjs      # real Electron + real bash + TLS roundtrip
+npm run verify:browser          # real Chrome end-to-end (needs google-chrome)
 ```
-src/
-├── main/              # Electron main process
-│   ├── main.ts        # Application entry
-│   ├── ptyManager.ts  # PTY lifecycle management
-│   └── ipcHandlers.ts # IPC channel handlers
-├── renderer/          # Electron renderer process
-│   ├── terminalApp.ts # Tab management
-│   ├── terminalTab.ts # Single terminal instance
-│   ├── xtermWrapper.ts # xterm.js integration
-│   ├── tabBar.ts      # Tab UI component
-│   ├── searchBar.ts   # Search UI component
-│   └── themeManager.ts # Theme switching
-└── shared/            # Shared constants
-    ├── ipcChannels.ts # IPC protocol definitions
-    └── themes/        # Color themes (VS Code Dark/Light)
-```
+
+Suites print `N/M passed` and exit non-zero on failure — see
+[docs/verification-standard.md](docs/verification-standard.md).
+
+### Platform support
+
+| Platform | Status |
+|----------|--------|
+| Linux (deb/AppImage) | ✅ verified end-to-end (development platform) |
+| Windows | ⚠️ base terminal works (ConPTY paths); remote layer untested — reports welcome |
+| macOS | ⚠️ untested |
+
+`ws` and `node-pty` must stay webpack externals — bundling `ws` deadlocks
+the Electron main loop (forensics: `docs/test-reports/` M2 §4).
+
+### Security model — read before exposing this anywhere
+
+Ternimal serves a **shell over the network**. That is the feature and the
+risk. Mitigations: HTTPS-only, one dynamic token per launch (constant-time
+compare, fragment-carried, instantly rotatable), dual fingerprint display,
+per-IP lockout, hardened cookies. Sessions/auth are deliberately in-memory
+— restarting revokes everything.
+
+**Do not port-forward it to the internet.** LAN/VPN only; the boundary is
+part of the design.
+
+### Documentation
+
+- [docs/remote-terminal-requirements.md](docs/remote-terminal-requirements.md) — requirements (with iteration history)
+- [docs/technical-design.md](docs/technical-design.md) — architecture decisions
+- [docs/final-delivery-report.md](docs/final-delivery-report.md) — delivery report + known limitations
+- [docs/test-reports/](docs/test-reports/) — per-milestone verification reports
+- Screenshots: [docs/test-reports/screenshots/](docs/test-reports/screenshots/)
+
+### How it compares
+
+| | Client install | Sessions survive | Mobile combo keys | Cloud dependency |
+|---|---|---|---|---|
+| **Ternimal** | browser only | built-in (replay) | sticky Ctrl/Alt/Shift + arrows | none |
+| tmux + SSH app | SSH client + keys | via tmux | varies | none |
+| ttyd / wetty / gotty | browser | new session per connect | ✗ | none |
+| tunnel + web terminal | browser | varies | ✗ | **yes** |
+
+### Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: run the full verify
+matrix before sending anything that touches the transport seam, the
+registry, or the remote server.
 
 ---
 
@@ -114,107 +130,110 @@ src/
 ## 中文
 
 ### 项目概述
-Ternimal 是一个基于现代 Web 技术构建的独立终端模拟器应用程序。它从 Visual Studio Code 的官方代码库中提取终端架构模式，以独立的桌面应用程序形式提供高性能、功能丰富的终端体验。
 
-### 架构设计
-本项目复刻了 VS Code 的终端架构，包含三个核心组件：
+Ternimal 是独立终端模拟器（xterm.js + node-pty，提取 VS Code 终端架构
+模式），并在此之上叠加远程层：主进程的 `SessionRegistry` 是唯一事实源，
+本地 Electron 窗口与局域网/VPN 内的浏览器客户端通过 HTTPS attach 到
+**同一组 PTY 会话**。关窗口、刷新页面、断网全会话存活——重连时环形缓冲
+重放恢复滚动历史。
 
-| 组件 | 技术 | 用途 |
-|------|------|------|
-| **前端** | xterm.js | 终端渲染，支持 WebGL 加速 |
-| **后端** | node-pty | 伪终端进程管理 |
-| **桥接** | Electron IPC | UI 与 Shell 之间的双向数据流 |
+为 AI Agent 时代而生：桌面跑 Claude Code（或任何 CLI），手机躺沙发监督。
 
-### 主要功能
+### 特性亮点
 
-**多标签支持**
-- 新建标签：`Ctrl+Shift+T`
-- 关闭标签：`Ctrl+W`
-- 切换标签：`Ctrl+Tab` / `Ctrl+Shift+Tab`
+- **扫码即登录** —— 每次启动生成 192bit 动态令牌，经 URL *片段* 携带
+ （不抵达服务器、不进日志）；托盘出示二维码，手机一扫即入。令牌随启动
+  轮换，也可托盘随时重置（即刻吊销全部会话）
+- **零客户端安装** —— 远程端只是普通 HTTPS 页面；本地窗口与浏览器通过
+  同一标签列表保持一致
+- **移动端软键盘** —— 可拖动悬浮条：Ctrl/Alt/Shift 粘滞组合（任意搭配、
+  一次性复位）+ Esc/Tab + ↑↓←→（遵循 DECCKM 光标模式）。手机上 `Ctrl+C`、
+  readline 元键跳词、vim 移动全可用
+- **隐私优先组网** —— 自签名 TLS（SHA-256 指纹登录页与托盘双侧展示，
+  防中间人）；仅内网/VPN（设计如此）；每 IP 限速；硬化 cookie；WS 升级复验
+- **工程纪律** —— 6 套件 220+ 自动断言，含真 Chrome 端到端
 
-**高级渲染**
-- WebGL 渲染器，自动降级到 DOM
-- Unicode 11 支持
-- 256色和真彩色支持
+### 本地终端功能
 
-**用户体验**
-- 暗黑/明亮主题切换：`Ctrl+Shift+L`
-- 终端内搜索：`Ctrl+Shift+F`
-- 右键复制/粘贴
-- 窗口变化自动调整大小
-- 回滚缓冲区（5000行）
+| | |
+|---|---|
+| 新建 / 关闭 / 切换标签 | `Ctrl+Shift+T` / `Ctrl+W` / `Ctrl+Tab` |
+| 搜索 / 主题切换 | `Ctrl+Shift+F` / `Ctrl+Shift+L` |
+| 渲染 | WebGL 自动降级 DOM、Unicode 11、真彩色 |
+| 平台 | Windows（ConPTY）/ macOS / Linux（POSIX PTY） |
 
-**跨平台**
-- Windows：PowerShell/CMD，支持 ConPTY
-- macOS/Linux：默认 Shell，使用 POSIX PTY
-
-### 安装方法
+### 快速开始
 
 ```bash
-# 克隆仓库
 git clone https://github.com/eathard/vscode-ternimal.git
 cd vscode-ternimal
-
-# 安装依赖
-npm install
-
-# 构建并运行
-npm run dev
-
-# 或构建生产版本
-npm run build
-npm run pack        # Windows 安装包
+npm install --include=dev   # 构建需要 dev 工具链
+npm run rebuild             # 原生模块（node-pty）对齐 Electron
+npm run dev                 # 构建 + 启动
 ```
 
-### 提取的 VS Code 模式
+首次启动打印访问 URL 并出现托盘图标。托盘菜单 → **查看访问信息（二维码）**
+→ 手机扫码 → 信任自签名证书（谨慎可核对指纹）→ 进入终端。
 
-本项目整合了 VS Code 终端实现中的成熟模式：
+### 全量验证
 
-1. **双向数据流** (`terminalTab.ts:54-64`)
-   - xterm → PTY：转发用户输入
-   - PTY → xterm：渲染 Shell 输出
-
-2. **WebGL 渲染器与降级** (`xtermWrapper.ts:106-117`)
-   - 尝试 WebGL 进行 GPU 加速
-   - 失败时优雅降级到 DOM 渲染器
-   - 上下文丢失处理
-
-3. **PTY 尺寸保护** (`ptyManager.ts:70-72`)
-   - 防止零/负尺寸错误
-   - 模式源自 `terminalProcess.ts:532-568`
-
-4. **Windows 进程超时** (`ptyManager.ts:78-95`)
-   - 处理 Windows ConPTY 关闭时的挂起
-   - 5秒超时后强制终止
-
-### 项目结构
-
+```bash
+npm run verify                  # 单元 + 协议 + 重连 + 软键盘
+node scripts/smoke-e2e.mjs      # 真实 Electron + 真 bash + TLS 往返
+npm run verify:browser          # 真 Chrome 端到端（需系统 google-chrome）
 ```
-src/
-├── main/              # Electron 主进程
-│   ├── main.ts        # 应用入口
-│   ├── ptyManager.ts  # PTY 生命周期管理
-│   └── ipcHandlers.ts # IPC 通道处理器
-├── renderer/          # Electron 渲染进程
-│   ├── terminalApp.ts # 标签页管理
-│   ├── terminalTab.ts # 单个终端实例
-│   ├── xtermWrapper.ts # xterm.js 集成
-│   ├── tabBar.ts      # 标签页 UI 组件
-│   ├── searchBar.ts   # 搜索 UI 组件
-│   └── themeManager.ts # 主题切换
-└── shared/            # 共享常量
-    ├── ipcChannels.ts # IPC 协议定义
-    └── themes/        # 配色主题（VS Code 暗黑/明亮）
-```
+
+套件打印 `N/M passed`，失败非零退出 —— 详见
+[docs/verification-standard.md](docs/verification-standard.md)。
+
+### 平台支持
+
+| 平台 | 状态 |
+|------|------|
+| Linux（deb/AppImage） | ✅ 端到端验证（开发平台） |
+| Windows | ⚠️ 本地终端可用（含 ConPTY）；远程层未实测，欢迎反馈 |
+| macOS | ⚠️ 未实测 |
+
+`ws` 与 `node-pty` 必须保持 webpack external —— 打包 `ws` 会死锁主事件
+循环（取证见 `docs/test-reports/` M2 §4）。
+
+### 安全模型 —— 暴露到任何网络前必读
+
+Ternimal 把 **shell 搬上网络**，这既是功能也是风险。缓解：仅 HTTPS、
+每次启动一个动态令牌（恒时比对、片段携带、可即刻轮换）、指纹双侧展示、
+每 IP 锁定、硬化 cookie。会话与鉴权刻意只存内存——重启即吊销一切。
+
+**不要端口转发到公网。** 仅限内网/VPN，这条边界是设计的一部分。
+
+### 文档
+
+- [docs/remote-terminal-requirements.md](docs/remote-terminal-requirements.md) —— 需求（含迭代史）
+- [docs/technical-design.md](docs/technical-design.md) —— 架构决策
+- [docs/final-delivery-report.md](docs/final-delivery-report.md) —— 交付报告 + 已知限制
+- [docs/test-reports/](docs/test-reports/) —— 各里程碑验证报告
+- 截图：[docs/test-reports/screenshots/](docs/test-reports/screenshots/)
+
+### 横向对比
+
+| | 装客户端 | 会话存活 | 手机组合键 | 云依赖 |
+|---|---|---|---|---|
+| **Ternimal** | 仅浏览器 | 内置（重放） | 粘滞 Ctrl/Alt/Shift + 方向键 | 无 |
+| tmux + SSH 应用 | SSH 客户端+密钥 | 靠 tmux | 参差 | 无 |
+| ttyd / wetty / gotty | 浏览器 | 一连一新会话 | ✗ | 无 |
+| 内网穿透 + web 终端 | 浏览器 | 不定 | ✗ | **有** |
+
+### 参与贡献
+
+见 [CONTRIBUTING.md](CONTRIBUTING.md)。一句话版：凡触碰传输缝、注册表或
+远程服务器的改动，先跑全量验证矩阵。
 
 ---
-
-## License / 许可证
-
-MIT License
 
 ## Acknowledgments / 致谢
 
 This project is inspired by and extracts patterns from the [Visual Studio Code](https://github.com/microsoft/vscode) terminal implementation.
-
 本项目灵感来源于并从 [Visual Studio Code](https://github.com/microsoft/vscode) 终端实现中提取模式。
+
+## License / 许可证
+
+[MIT](LICENSE)
