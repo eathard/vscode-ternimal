@@ -43,6 +43,9 @@ DynamicUser=yes
 
 ## 配置文件（relay/relay-config.json，勿提交）
 
+> **模板：`relay-config.json.example`** —— 含全部字段与中文说明，复制即用：
+> `cp relay-config.json.example relay-config.json`（凭据字段由 CLI 生成，勿手写）
+
 `add-master` 自动生成/维护；字段见 `src/config.mjs` 默认值：监听地址/端口、
 TLS 路径、trustedProxy、webRoot 与全部阈值（子码 TTL、并发管道上限、
 背压上限、限速窗口等，方案书 §3.5 默认参数表）。

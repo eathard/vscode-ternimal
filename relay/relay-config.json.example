@@ -1,0 +1,46 @@
+{
+  "_readme": [
+    "Ternimal Relay 配置模板 —— 复制为 relay-config.json 后按需修改：",
+    "  cp relay-config.json.example relay-config.json",
+    "凭据字段（masters/masterHashes/adminHash）由 CLI 生成维护，勿手写：",
+    "  node cli.mjs add-master --days 30 --label 客户A   # 签发带有效期主码",
+    "  node cli.mjs set-admin '管理密码至少8位'            # 管理页 /admin 密码",
+    "所有字段均可省略（省略=用默认值）；改后需重启 relay。",
+    "本文件含 _doc* 说明键，程序加载时忽略它们，复制即可用。"
+  ],
+  "_doc_listen": "监听：127.0.0.1:8080 = 前置反代（Caddy/Nginx 终结 TLS）时推荐；直接暴露则改 0.0.0.0 并配 tls",
+  "host": "127.0.0.1",
+  "port": 8080,
+
+  "_doc_tls": "内置 TLS：null=明文（前置反代场景）；自签/已有证书填 PEM 路径",
+  "tls": null,
+
+  "_doc_proxy": "仅当位于可信反代之后才设 true（采信 X-Forwarded-For 做限速计账；直连暴露=false 防伪造）",
+  "trustedProxy": false,
+
+  "_doc_webroot": "托管 web 客户端静态资源目录（dist/web）；空串=不托管",
+  "webRoot": "",
+
+  "_doc_masters": "结构化主码（计费生命周期）：hash=SHA-256（CLI 生成）、expiresAt=毫秒时间戳或 null(永久)、revoked=吊销；管理页/CLI 维护，通常留空数组",
+  "masters": [],
+
+  "_doc_masterHashes": "旧式主码哈希列表（兼容保留；视为永久）。同样由 add-master 维护",
+  "masterHashes": [],
+
+  "_doc_adminHash": "管理页密码的 scrypt 哈希（set-admin 生成）；null=管理页关闭（/admin 返回 404）",
+  "adminHash": null,
+
+  "_doc_limits": "运行限制（全部可选，以下为默认值）",
+  "limits": {
+    "subcodeTtlHours": 24,
+    "maxPipesPerChannel": 4,
+    "joinPendingMs": 10000,
+    "firstFrameTimeoutMs": 10000,
+    "heartbeatIntervalMs": 30000,
+    "backpressureBytes": 1048576,
+    "maxPayloadBytes": 1048576,
+    "rateWindowMs": 60000,
+    "rateLockMs": 60000,
+    "rateMaxFailures": 5
+  }
+}
