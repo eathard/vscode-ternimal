@@ -1,4 +1,5 @@
 const path = require('path');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   mode: 'production',
@@ -33,6 +34,13 @@ module.exports = {
     // docs/test-reports/M2-report.md). Keep it external like node-pty.
     ws: 'commonjs ws',
   },
+  plugins: [
+    // WBS-R2-G: relay 插件以原样 .mjs 随 dist 分发（ws 为运行时 external，
+    // 无需打包），utilityProcess 直接加载 dist/plugins/relayPlugin.mjs。
+    new CopyWebpackPlugin({
+      patterns: [{ from: 'relay/src/plugin/relayPlugin.mjs', to: '../plugins/relayPlugin.mjs' }],
+    }),
+  ],
   node: {
     __dirname: false,
     __filename: false,

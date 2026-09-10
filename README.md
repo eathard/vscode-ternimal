@@ -322,3 +322,20 @@ This project is inspired by and extracts patterns from the [Visual Studio Code](
 ## License / 许可证
 
 [MIT](LICENSE)
+
+## 多实例（方案 B）
+
+一台机器可并行运行多个相互隔离的 Ternimal 实例（各自配置、证书、中继主码、端口）：
+
+```bash
+# 第二个实例（id 自取，字母数字-_，≤32 字符）
+npx electron . --no-sandbox --ternimal-instance=work
+# 或环境变量：TERNIMAL_INSTANCE=work
+```
+
+- **配置独立**：`<userData>/instances/<id>/config/config.json`（首次从默认配置克隆，但**中继置为关闭**——双实例须各自填独立主码再启用，防同主码在 relay 侧互相接管）；
+- **配色对应**：实例 id 哈希 → 固定配色；顶部标签栏背景/强调线与**托盘图标染色**同源同色，窗口标题带实例标签，多实例一眼可辨；
+- **端口共存**：配置端口被占（多为另一实例）自动回退随机端口，启动不失败；
+- **中继共存**：不同主码 = 不同通道，双实例同时在线互不干扰（`verify-multi-instance` 5/5 验证）。
+
+验证：`npm run verify:instances`

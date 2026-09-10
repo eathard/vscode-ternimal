@@ -13,10 +13,14 @@ export const WS = {
     RATE_LIMITED: 4002,
     NO_SESSION: 4003,
     BAD_MESSAGE: 4004,
+    /** WBS-R2-C: relay/loopback first-frame auth denied (token mismatch). */
+    AUTH_DENIED: 4005,
   } as const,
   /** Defaults; RemoteServer accepts overrides (tests run them fast). */
   HEARTBEAT_INTERVAL_MS: 30_000,
   SLOW_CLIENT_BYTES: 8 * 1024 * 1024,
+  /** WBS-R2-C: first-frame auth deadline for relay/loopback connections. */
+  RELAY_AUTH_TIMEOUT_MS: 5_000,
 } as const;
 
 // ---------- client → server ----------
@@ -53,6 +57,30 @@ export interface WsResizeMsg {
   rows: number;
 }
 
+export interface WsJoinAuthMsg {
+  /** WBS-R2-C: first-frame auth for relay/loopback connections (no cookie).
+   * R-M4-A 起 relay 路径不再接受明文 auth（改挑战应答）；类型保留仅为
+   * 协议兼容识别，服务端对 relay 连接的明文 auth 一律 AUTH_REQUIRED。 */
+  type: 'auth';
+  token: string;
+}
+
+/** R-M4-B：加密数据面信封（auth-ok{enc:1} 之后的双向业务帧）。 */
+export interface WsSecureMsg {
+  type: 'secure';
+  iv: string;
+  ct: string;
+}
+
+export interface WsAuthResponseMsg {
+  /** R-M4-A 挑战应答：对 auth-challenge 的 HMAC-SHA256(token, nonce)，
+   * hex 编码。Token 明文不再经过中继/插件。 */
+  type: 'auth-response';
+  mac: string;
+  /** R-M4-B：客户端请求 E2E 加密（能力宣告，由 host 决定是否启用）。 */
+  enc?: 1;
+}
+
 export type ClientMessage =
   | WsListMsg
   | WsCreateMsg
@@ -60,7 +88,10 @@ export type ClientMessage =
   | WsAttachMsg
   | WsDetachMsg
   | WsInputMsg
-  | WsResizeMsg;
+  | WsResizeMsg
+  | WsJoinAuthMsg
+  | WsAuthResponseMsg
+  | WsSecureMsg;
 
 // ---------- server → client ----------
 
@@ -97,13 +128,30 @@ export interface WsErrorMsg {
   message: string;
 }
 
+export interface WsAuthOkMsg {
+  /** WBS-R2-C: acknowledges a first-frame `auth` (relay/loopback path). */
+  type: 'auth-ok';
+  /** R-M4-B：host 已启用 E2E 加密——此后双向业务帧均为 secure 信封。 */
+  enc?: 1;
+}
+
+export interface WsAuthChallengeMsg {
+  /** R-M4-A: relay 路径挑战。客户端须回 {type:'auth-response', mac}，
+   * mac = HMAC-SHA256(token, nonce) hex。nonce 单次有效（30s TTL）。 */
+  type: 'auth-challenge';
+  nonce: string;
+}
+
 export type ServerMessage =
   | WsTabsMsg
   | WsAttachedMsg
   | WsDataMsg
   | WsExitMsg
   | WsTitleMsg
-  | WsErrorMsg;
+  | WsErrorMsg
+  | WsAuthOkMsg
+  | WsAuthChallengeMsg
+  | WsSecureMsg;
 
 // ---------- (de)serialization with strict shape validation ----------
 
@@ -140,6 +188,18 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'attach':
     case 'detach':
       return typeof m.id === 'string' ? ({ type: m.type, id: m.id } as ClientMessage) : null;
+    case 'auth':
+      return typeof m.token === 'string'
+        ? { type: 'auth', token: m.token }
+        : null;
+    case 'auth-response':
+      return typeof m.mac === 'string'
+        ? { type: 'auth-response', mac: m.mac, ...(m.enc === 1 ? { enc: 1 as const } : {}) }
+        : null;
+    case 'secure':
+      return typeof m.iv === 'string' && typeof m.ct === 'string'
+        ? { type: 'secure', iv: m.iv, ct: m.ct }
+        : null;
     case 'input':
       return typeof m.id === 'string' && typeof m.data === 'string'
         ? { type: 'input', id: m.id, data: m.data }

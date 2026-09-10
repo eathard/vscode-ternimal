@@ -68,6 +68,11 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - **Resize guards** (`ptyManager.ts:71`): dimensions clamped with `Math.max(cols, 1)` to avoid zero/negative PTY sizes
 - **Windows ConPTY kill timeout** (`ptyManager.ts:78-95`): 5s force-kill fallback because ConPTY can hang
 
+## Relay & Multi-instance
+
+- `relay/` is a standalone zero-knowledge relay server (Node, no build step; `relay/cli.mjs serve`). Its verification suites: `npm run verify:relay` (+ `verify:instances` for multi-instance). Runtime `relay/relay-config.json` is gitignored (contains credential hashes).
+- Multi-instance: `--ternimal-instance=<id>` (or `TERNIMAL_INSTANCE`) gives each instance its own userData under `instances/<id>/` (config seeded from default with relay DISABLED — same master code in two instances causes a takeover war), a claimed color (top bar + tray icon + window title), and automatic port fallback on EADDRINUSE. Default launch is untouched.
+
 ## Build & Platform Gotchas
 
 - `node-pty` is a **native module**, excluded from the webpack bundle (`externals` in webpack.main.config.js). After changing Electron or node-pty versions, run `npm run rebuild` or the app will crash on startup

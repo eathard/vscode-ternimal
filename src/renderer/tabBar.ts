@@ -9,6 +9,16 @@ export class TabBar {
   onTabClose: ((id: string) => void) | null = null;
   onNewTab: (() => void) | null = null;
 
+  /** R-M2: trailing icon button (settings gear) on the right edge. */
+  addTrailingButton(glyph: string, title: string, onClick: () => void): void {
+    const btn = document.createElement('button');
+    btn.className = 'tab-bar-gear';
+    btn.textContent = glyph;
+    btn.title = title;
+    btn.addEventListener('click', onClick);
+    this.container.appendChild(btn);
+  }
+
   constructor(parent: HTMLElement) {
     this.container = document.createElement('div');
     this.container.className = 'tab-bar';

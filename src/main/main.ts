@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import { SessionRegistry } from './sessionRegistry';
 import { RemoteServer } from './remoteServer';
@@ -7,7 +7,9 @@ import { ConfigStore } from './configStore';
 import { ensureCertificate } from './certManager';
 import { AuthManager } from './authManager';
 import { TrayController } from './tray';
+import { RelayController } from './relayController';
 import { detectLocale } from '../shared/i18n';
+import { resolveInstanceId, instanceIdentity, isolateUserData } from './instanceIdentity';
 
 // Disable Chromium sandbox for Linux compatibility with distros like Deepin
 // where the SUID sandbox crashes on startup
@@ -15,11 +17,18 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox');
 }
 
+// ---- 多实例（方案 B）：--ternimal-instance=<id> → 独立 userData + 实例配色 ----
+// 必须在 app ready 前完成 setPath（默认实例零迁移）。
+const INSTANCE_ID = resolveInstanceId(process.argv, process.env);
+const INSTANCE_COLOR = isolateUserData(app, INSTANCE_ID);
+const INSTANCE = instanceIdentity(INSTANCE_ID, INSTANCE_COLOR);
+
 // Single Sources of Truth, wired in whenReady (paths need a ready app).
 let mainWindow: BrowserWindow | null = null;
 let registry: SessionRegistry | null = null;
 let remoteServer: RemoteServer | null = null;
 let tray: TrayController | null = null;
+let relay: RelayController | null = null;
 let shuttingDown = false;
 
 // ---- window lifecycle (M4-B: resident; tray is the control surface) ----
@@ -35,7 +44,7 @@ function createWindow(): void {
     height: 650,
     minWidth: 400,
     minHeight: 300,
-    title: 'Ternimal',
+    title: INSTANCE.isDefault ? 'Ternimal' : `Ternimal — ${INSTANCE.id}`,
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -47,9 +56,22 @@ function createWindow(): void {
     autoHideMenuBar: true,
   });
 
+  // 外链（如设置页 GitHub 仓库）一律用系统浏览器打开，不在应用窗口内导航。
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://')) { e.preventDefault(); void shell.openExternal(url); }
+  });
+
   // Load the renderer — its init() restores tabs + scrollback from the
   // registry (TC-M4-03: sessions and history survive window close).
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // 页面自带 <title> 会覆盖窗口标题：加载后按实例身份重设（多实例辨识）
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (!INSTANCE.isDefault) mainWindow?.setTitle(`Ternimal — ${INSTANCE.id}`);
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -61,11 +83,15 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
+    // WBS-R2-A: 先停中继插件（kill 子进程 → socket 与代码一并卸载）
+    await relay?.stopForShutdown();
+    relay?.handleExitClearMaster();
     registry?.killAll();
     registry?.dispose();
     await remoteServer?.stop();
     tray?.destroy();
     unregisterIpcHandlers();
+    relay?.unregisterIpc();
   } finally {
     app.quit();
   }
@@ -73,7 +99,9 @@ async function shutdown(): Promise<void> {
 
 // ---- M3/M4 bootstrap: config → token → cert → server → tray ----
 
-async function startRemoteServer(): Promise<void> {
+let configuredPort = 0;
+
+async function startRemoteServer(portOverride?: number): Promise<void> {
   const userData = app.getPath('userData');
   const configStore = new ConfigStore(path.join(userData, 'config'));
   const config = configStore.load();
@@ -85,8 +113,19 @@ async function startRemoteServer(): Promise<void> {
     accessToken: process.env.TERNIMAL_TOKEN,
   });
 
-  const port = Number(process.env.TERNIMAL_PORT) || config.port;
-  const host = process.env.TERNIMAL_HOST || config.host;
+  const port = portOverride ?? (Number(process.env.TERNIMAL_PORT) || config.port);
+  configuredPort = port;
+  // WBS-R2-D/E：中继启用且未显式双开时收窄到 loopback（fail-secure，§8-Q3）。
+  // 环境覆盖（smoke/恢复）显式给出即视为启用。
+  const envRelay =
+    !!process.env.TERNIMAL_RELAY_URL && !!process.env.TERNIMAL_RELAY_MASTER;
+  const relayReady =
+    envRelay || (config.relay.enabled && !!config.relay.url && !!config.relay.masterCode);
+  const host =
+    process.env.TERNIMAL_HOST ||
+    (relayReady && !config.relay.lanDirect && config.host === '0.0.0.0'
+      ? '127.0.0.1'
+      : config.host);
 
   const tls = await ensureCertificate(
     path.join(userData, 'certs'),
@@ -108,27 +147,77 @@ async function startRemoteServer(): Promise<void> {
     host,
     maxSessions: config.maxSessions,
     locale: detectLocale(process.env.TERNIMAL_LOCALE ?? app.getLocale()),
+    allowRelayFirstFrameAuth: relayReady,
+    // R-M4-B：中继 E2E 加密（默认关；settings 面板或 TERNIMAL_RELAY_E2EE=1）
+    relayE2EE: config.relay.e2ee || process.env.TERNIMAL_RELAY_E2EE === '1',
   });
   remoteServer.certFingerprint = tls.fingerprint;
-  await remoteServer.start();
+  try {
+    await remoteServer.start();
+  } catch (err) {
+    try { await remoteServer.stop(); } catch { /* 未完成监听，忽略 */ }
+    throw err;
+  }
 
   // IPC handlers exactly once, with a lazy window accessor (M4 reopen safe).
-  registerIpcHandlers(registry, () => mainWindow);
+  registerIpcHandlers(registry, () => mainWindow, INSTANCE);
 
   // The access URL (token in the fragment) is logged once per launch.
   console.warn(`[Ternimal] access URL: https://${host === '0.0.0.0' ? lanIpForLog() : host}:${remoteServer.getPort()}/#T=${auth.getToken()}`);
   console.warn('[Ternimal] 托盘「查看访问信息」可显示二维码（手机扫码即登录），「重置访问令牌」可轮换');
 
+  // WBS-R2-E/F：中继编排面（设置 IPC + 分享链接 + 状态广播），
+  // tray 与设置面板共享同一实例。
+  relay = new RelayController({
+    configStore,
+    auth,
+    getPort: () => remoteServer?.getPort() ?? port,
+    fingerprint: tls.fingerprint,
+    serverHost: host,
+    serverRelayAuth: relayReady,
+    getWindow: () => mainWindow,
+    setE2EE: (v) => remoteServer?.setRelayE2EE(v),
+    onStatus: (e) => {
+      // 单行状态日志（用户可读 + smoke-e2e 观测通道）
+      console.warn(`[Ternimal] relay: ${e.state}${e.detail ? ` (${e.detail})` : ''} pid=${e.pid} pipes=${e.pipes}`);
+      tray?.rebuildMenu();
+    },
+  });
+  relay.registerIpc();
+  relay.ensureStarted();
+
   // Tray (M4-A): the residency control surface. Skipped in headless test
   // mode (CI boxes may have no display; Tray would throw).
   if (!process.env.TERNIMAL_HEADLESS_TEST) {
+    const relayForTray = relay;
     tray = new TrayController({
       auth,
+      identity: INSTANCE,
       locale: detectLocale(process.env.TERNIMAL_LOCALE ?? app.getLocale()),
       getPort: () => remoteServer?.getPort() ?? port,
       certFingerprint: tls.fingerprint,
       showWindow: createWindow,
       shutdown,
+      relay: {
+        state: () => relayForTray.stateSummary,
+        copyShareLink: async () => {
+          try {
+            const share = await relayForTray.shareLink('tray');
+            const { clipboard } = require('electron') as typeof import('electron');
+            clipboard.writeText(share.url);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        shareUrl: async () => {
+          try {
+            return (await relayForTray.shareLink('qr')).url;
+          } catch {
+            return null;
+          }
+        },
+      },
     });
     tray.create();
   }
@@ -151,8 +240,22 @@ app.whenReady().then(() => {
         createWindow();
       }
     })
-    .catch((err) => {
-      console.error('[Ternimal] startup failed:', err);
+    .catch(async (err: NodeJS.ErrnoException) => {
+      // 多实例共存：端口被占（多半是另一实例）→ 回退 0 自动分配重试一次
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`[Ternimal] 端口 ${configuredPort} 被占用（多实例？），改用自动端口`);
+        try {
+          await startRemoteServer(0);
+          if (!process.env.TERNIMAL_HEADLESS_TEST) {
+            createWindow();
+          }
+          return;
+        } catch (err2) {
+          console.error('[Ternimal] startup failed (port fallback):', err2);
+        }
+      } else {
+        console.error('[Ternimal] startup failed:', err);
+      }
       app.quit();
     });
 });

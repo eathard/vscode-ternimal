@@ -3,6 +3,14 @@
 // backoff reconnect (1s..30s) and automatic re-attach of known sessions so a
 // network blip mid-Claude-Code-task heals transparently (replay comes from
 // the server's ring buffer via `attached`).
+//
+// R-M3 relay mode (WBS-R3-B/C): pass `opts.relay = {subCode, token}` to talk
+// to a relay `/join` endpoint instead of a cookie-authed `/ws`. On open the
+// transport sends the join frame then the first-frame auth immediately —
+// the relay buffers early frames until the pipe is spliced, so no ack is
+// needed. Fatal close codes (bad sub-code / rate limit / sub-code revoked)
+// STOP reconnection and surface via onRelayState; transient failures keep
+// the existing backoff loop and re-run the join+auth handshake.
 import type {
   SessionInfo,
   DataPayload,
@@ -15,6 +23,7 @@ import type {
   AttachedPayload,
   Unsubscribe,
 } from './transport';
+import { sealFrame, openFrame, deriveSessionKey } from '../../shared/e2ee';
 
 type ListenerBag = {
   tabs: Array<(tabs: SessionInfo[]) => void>;
@@ -24,9 +33,26 @@ type ListenerBag = {
   attached: Array<(p: AttachedPayload) => void>;
 };
 
+export type RelayGateState =
+  | 'connecting' // dialing / joining / awaiting auth-ok
+  | 'ready' // auth-ok received — terminal live
+  | 'denied' // bad sub-code / token locked — will NOT retry
+  | 'revoked'; // sub-code expired or revoked — will NOT retry
+
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 5000;
+/** relay close codes that must not be retried (relay/src/protocol.mjs CLOSE).
+ * 与 relay 实际关闭码表逐一对齐（R4-C 矩阵 M-03 发现旧表错位：
+ * 4003 实为 HOST_OFFLINE（瞬态——插件重启期），4004 实为 BUSY（瞬态），
+ * 4005 实为 PENDING_TIMEOUT（瞬态）；真正「重试无意义」的是错码/限速/
+ * 过期/吊销）。瞬态码走退避重连，恢复后自动回归。 */
+const FATAL_CLOSE_CODES: Record<number, RelayGateState> = {
+  4001: 'denied', // BAD_CODE — wrong/unknown sub-code
+  4002: 'denied', // RATE_LIMITED — locked out
+  4008: 'revoked', // SUBCODE_EXPIRED
+  4009: 'revoked', // SUBCODE_REVOKED
+};
 
 /**
  * Node/test injection seam (M4-D): the browser build uses the global
@@ -37,15 +63,21 @@ const REQUEST_TIMEOUT_MS = 5000;
 export interface WebSocketTransportOptions {
   wsImpl?: any;
   wsOptions?: Record<string, unknown>;
+  /** R-M3: relay access mode (join + first-frame auth, no cookie). */
+  relay?: { subCode: string; token: string };
 }
 export class WebSocketTransport implements TerminalTransport {
   private url: string;
   private wsImpl: any;
   private wsOptions?: Record<string, unknown>;
+  private readonly relay?: { subCode: string; token: string };
   private ws: any = null;
   private closedByUser = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Relay gate state (LAN mode: always 'ready' once open). */
+  private gateState: RelayGateState = 'connecting';
+  private gateListeners: Array<(s: RelayGateState, detail: string) => void> = [];
 
   /** Sessions this client wants to follow across reconnects. */
   private attachedIds = new Set<string>();
@@ -56,12 +88,37 @@ export class WebSocketTransport implements TerminalTransport {
   private waitersForTabs: Array<(tabs: SessionInfo[]) => void> = [];
   /** Messages sent while offline; flushed the moment the socket opens. */
   private outbox: string[] = [];
+  /** R-M4-B: 最近一次挑战的 nonce（E2E 会话密钥 HKDF 材料）。 */
+  private relayNonce = '';
+  /** R-M4-B: E2E 会话密钥（auth-ok{enc:1} 起生效；null = 明文）。 */
+  private e2eeKey: CryptoKey | null = null;
+  /** R-M4-B: 加密发送链（Promise 串行，保证 seal 完成顺序 = 发送顺序）。 */
+  private e2eeQueue: Promise<void> = Promise.resolve();
 
   constructor(url: string, opts: WebSocketTransportOptions = {}) {
     this.url = url;
     this.wsImpl = opts.wsImpl ?? WebSocket;
     this.wsOptions = opts.wsOptions;
+    this.relay = opts.relay;
     this.connect();
+  }
+
+  /** R-M3: relay gate state (denied/revoked drive the fallback UI). */
+  onRelayState(cb: (state: RelayGateState, detail: string) => void): Unsubscribe {
+    this.gateListeners.push(cb);
+    cb(this.gateState, '');
+    return () => {
+      this.gateListeners = this.gateListeners.filter((l) => l !== cb);
+    };
+  }
+
+  get relayGate(): RelayGateState {
+    return this.gateState;
+  }
+
+  private setGate(state: RelayGateState, detail = ''): void {
+    this.gateState = state;
+    this.gateListeners.forEach((l) => l(state, detail));
   }
 
   dispose(): void {
@@ -227,6 +284,7 @@ export class WebSocketTransport implements TerminalTransport {
 
   private connect(): void {
     if (this.closedByUser) return;
+    if (this.relay) this.setGate('connecting');
     try {
       this.ws = this.wsOptions
         ? new this.wsImpl(this.url, this.wsOptions)
@@ -238,9 +296,16 @@ export class WebSocketTransport implements TerminalTransport {
 
     this.ws.onopen = () => {
       this.reconnectAttempt = 0;
+      this.e2eeKey = null; // 新连接新会话：重连后按新挑战重新派生
+      if (this.relay) {
+        // R-M4-A: 只发 join；认证改挑战应答——收到 auth-challenge 后回
+        // HMAC(token, nonce)，Token 明文不再经过中继/插件。
+        this.send({ v: 1, type: 'join', subCode: this.relay.subCode });
+        return; // re-attach happens after auth-ok (server pushes tabs then)
+      }
       if (this.outbox.length) {
         const queued = this.outbox.splice(0);
-        for (const raw of queued) this.ws.send(raw);
+        for (const raw of queued) this.sendRaw(raw);
       }
       // Server pushes an initial tabs snapshot on connect; re-attach the
       // sessions we were following (replay arrives via `attached`).
@@ -253,8 +318,20 @@ export class WebSocketTransport implements TerminalTransport {
       this.handleMessage(String(ev.data));
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (arg0?: any) => {
+      // Close-code shapes differ: browser CloseEvent vs `ws` package
+      // (code, reason) callback args. Normalize.
+      const code = typeof arg0 === 'number' ? arg0 : Number(arg0?.code ?? 1006);
       this.ws = null;
+      if (this.relay) {
+        const fatal = FATAL_CLOSE_CODES[code];
+        if (fatal) {
+          // Bad sub-code / locked / revoked — retrying is pointless and
+          // would hammer the relay; stop and surface to the gate UI.
+          this.setGate(fatal, `close ${code}`);
+          return;
+        }
+      }
       this.scheduleReconnect();
     };
 
@@ -274,12 +351,81 @@ export class WebSocketTransport implements TerminalTransport {
     }, delay);
   }
 
+  /** R-M4-A 挑战应答：HMAC-SHA256(token, nonce) → {auth-response, mac}。
+   * crypto.subtle 需要安全上下文（https 或 localhost）。 */
+  private async answerChallenge(nonce: string): Promise<void> {
+    if (!nonce) return;
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) {
+      // 非安全上下文（例如 http 公网中继）无法完成挑战应答
+      this.setGate('denied', 'WebCrypto unavailable (insecure context)');
+      this.dispose();
+      return;
+    }
+    try {
+      const enc = new TextEncoder();
+      const key = await subtle.importKey(
+        'raw',
+        enc.encode(this.relay!.token),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sig = await subtle.sign('HMAC', key, enc.encode(nonce));
+      const mac = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
+      this.relayNonce = nonce; // R-M4-B: 留作 HKDF salt
+      this.send({ type: 'auth-response', mac, enc: 1 }); // enc 由 host 决定
+    } catch (err) {
+      console.warn('[Ternimal] challenge answer failed:', err);
+    }
+  }
+
   private send(msg: unknown): void {
-    const raw = JSON.stringify(msg);
+    this.sendRaw(JSON.stringify(msg));
+  }
+
+  /** R-M4-B：加密激活后出站业务帧一律 seal；控制帧（join/auth-response）
+   * 在密钥生效前发送，天然明文。 */
+  private sendRaw(raw: string): void {
+    if (this.e2eeKey) {
+      this.e2eeQueue = this.e2eeQueue
+        .then(async () => {
+          if (!this.e2eeKey || this.ws?.readyState !== WebSocket.OPEN) return;
+          this.ws.send(await sealFrame(this.e2eeKey, raw));
+        })
+        .catch(() => {
+          /* 重连/断开自愈 */
+        });
+      return;
+    }
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(raw);
     } else {
       this.outbox.push(raw); // e.g. create during startup, before open
+    }
+  }
+
+  /** R-M3 relay mode ready 路径（R-M4-B: 密钥激活后走加密出站）。 */
+  private relayAuthOk(): void {
+    this.setGate('ready');
+    if (this.outbox.length) {
+      const queued = this.outbox.splice(0);
+      for (const raw of queued) this.sendRaw(raw);
+    }
+    for (const id of this.attachedIds) {
+      this.send({ type: 'attach', id });
+    }
+  }
+
+  /** R-M4-B：auth-ok{enc:1} → 本地派生会话密钥再放行业务流。 */
+  private async activateE2EE(): Promise<void> {
+    try {
+      this.e2eeKey = await deriveSessionKey(this.relay!.token, this.relayNonce);
+      this.relayAuthOk();
+    } catch (err) {
+      console.warn('[Ternimal] E2EE key derivation failed:', err);
+      this.setGate('denied', 'E2EE key derivation failed');
+      this.dispose();
     }
   }
 
@@ -311,6 +457,33 @@ export class WebSocketTransport implements TerminalTransport {
         this.listeners.attached.forEach((l) => l(p));
         break;
       }
+      case 'secure': {
+        // R-M4-B: 解封后按普通业务帧分发（嵌套 secure 解封必败 → 丢弃）。
+        if (this.e2eeKey) {
+          void openFrame(this.e2eeKey, raw)
+            .then((inner) => {
+              if (inner !== null) this.handleMessage(inner);
+            })
+            .catch(() => {
+              /* 单帧损坏：忽略，连接层错误由服务端裁决 */
+            });
+        }
+        break;
+      }
+      case 'auth-challenge': {
+        // R-M4-A: HMAC-SHA256(token, nonce)（WebCrypto，浏览器与 Node 同码）。
+        if (this.relay) void this.answerChallenge(String(msg.nonce ?? ''));
+        break;
+      }
+      case 'auth-ok': {
+        // R-M3 relay mode: gate open. The host pushes a tabs snapshot right
+        // after; re-attach followed sessions (replay via `attached`).
+        if (this.relay) {
+          if (msg.enc === 1) void this.activateE2EE();
+          else this.relayAuthOk();
+        }
+        break;
+      }
       case 'data':
         this.listeners.data.forEach((l) => l({ id: msg.id, data: msg.data }));
         break;
@@ -322,7 +495,12 @@ export class WebSocketTransport implements TerminalTransport {
         this.listeners.title.forEach((l) => l({ id: msg.id, title: msg.title }));
         break;
       case 'error':
-        if (msg.code === 4001 && typeof window !== 'undefined' && window.location) {
+        if (this.relay) {
+          // Relay mode has no /login page — surface to the gate UI instead.
+          // Terminal close follows for fatal codes; FATAL_CLOSE_CODES stops
+          // the retry loop there.
+          this.setGate(msg.code === 4005 ? 'denied' : 'connecting', `error ${msg.code}`);
+        } else if (msg.code === 4001 && typeof window !== 'undefined' && window.location) {
           // AUTH_REQUIRED (M3): land on the login page.
           window.location.href = '/login';
         }

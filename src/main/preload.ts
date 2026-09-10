@@ -55,6 +55,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDefaultShell: () => {
     return ipcRenderer.invoke(IPC.GET_DEFAULT_SHELL);
   },
+  // 多实例：实例配色/标签（顶栏背景对应托盘图标的依据）
+  instanceInfo: () => {
+    return ipcRenderer.invoke(IPC.APP_INSTANCE_INFO);
+  },
+  // Relay settings panel (R-M2) — host window only, never part of the
+  // TerminalTransport seam (web bundle has no relay admin UI).
+  relayGetSettings: () => {
+    return ipcRenderer.invoke(IPC.RELAY_GET_SETTINGS);
+  },
+  relayApplySettings: (patch: Record<string, unknown>) => {
+    return ipcRenderer.invoke(IPC.RELAY_APPLY_SETTINGS, patch);
+  },
+  relayShareLink: (label?: string, ttlHours?: number) => {
+    return ipcRenderer.invoke(IPC.RELAY_SHARE_LINK, label, ttlHours);
+  },
+  relayListSubcodes: () => {
+    return ipcRenderer.invoke(IPC.RELAY_LIST_SUBCODES);
+  },
+  relayRevokeSubcode: (id: string) => {
+    return ipcRenderer.invoke(IPC.RELAY_REVOKE_SUBCODE, id);
+  },
+  onRelayStatus: (callback: (status: unknown) => void) => {
+    const handler = (_event: unknown, status: unknown) => callback(status);
+    ipcRenderer.on(IPC.RELAY_ON_STATUS, handler);
+    return () => ipcRenderer.removeListener(IPC.RELAY_ON_STATUS, handler);
+  },
   clipboardWrite: (text: string) => {
     clipboard.writeText(text);
   },

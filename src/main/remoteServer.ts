@@ -26,6 +26,7 @@ import {
   WS,
   encodeServerMessage,
   parseClientMessage,
+  type ClientMessage,
   type ServerMessage,
   type WsTabsMsg,
   type WsAttachedMsg,
@@ -33,7 +34,10 @@ import {
   type WsExitMsg,
   type WsTitleMsg,
   type WsErrorMsg,
+  type WsAuthOkMsg,
+  type WsAuthChallengeMsg,
 } from '../shared/wsProtocol';
+import { sealFrame, openFrame } from '../shared/e2ee';
 
 export interface RemoteServerOptions {
   /** UI locale for served pages (default: env TERNIMAL_LOCALE, else en). */
@@ -50,12 +54,32 @@ export interface RemoteServerOptions {
   heartbeatIntervalMs?: number;
   slowClientBytes?: number;
   maxSessions?: number;
+  /**
+   * WBS-R2-C：允许「loopback 来源 + 无 cookie + 首帧 auth」的中继接入路径。
+   * 默认关闭（未启用中继时语义与 M3 完全一致：无 cookie → 401）。
+   */
+  allowRelayFirstFrameAuth?: boolean;
+  /**
+   * R-M4-B：中继路径端到端加密（AES-256-GCM，密钥 HKDF(token, nonce)）。
+   * 默认关闭；开启后对请求加密的中继连接启用——auth-ok{enc:1} 起双向
+   * 业务帧均为 secure 信封，relay/插件全程只见密文。
+   */
+  relayE2EE?: boolean;
 }
 
 interface ClientState {
   ws: WebSocket;
   attached: Set<string>;
   sawPong: boolean;
+  /** false until a first-frame `auth` succeeds (relay/loopback path only). */
+  authenticated: boolean;
+  authDeadline: NodeJS.Timeout | null;
+  /** R-M4-A: 本连接签发的挑战 nonce（认证成功/失败即清）。 */
+  authNonce: string | null;
+  /** R-M4-B: E2E 会话密钥（auth-ok{enc:1} 起生效；null = 明文）。 */
+  e2eeKey: CryptoKey | null;
+  /** R-M4-B: 加密发送链（Promise 串行，保证 seal 完成顺序 = 发送顺序）。 */
+  e2eeQueue: Promise<void>;
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -80,6 +104,8 @@ export class RemoteServer {
   private readonly heartbeatIntervalMs: number;
   private readonly slowClientBytes: number;
   private readonly maxSessions: number;
+  private readonly allowRelayFirstFrameAuth: boolean;
+  private relayE2EE: boolean;
 
   private server: https.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -101,6 +127,13 @@ export class RemoteServer {
     this.heartbeatIntervalMs = opts.heartbeatIntervalMs ?? WS.HEARTBEAT_INTERVAL_MS;
     this.slowClientBytes = opts.slowClientBytes ?? WS.SLOW_CLIENT_BYTES;
     this.maxSessions = opts.maxSessions ?? 16;
+    this.allowRelayFirstFrameAuth = opts.allowRelayFirstFrameAuth ?? false;
+    this.relayE2EE = opts.relayE2EE ?? false;
+  }
+
+  /** R-M4-B：运行时切换中继 E2E 加密（仅影响此后新建的认证会话）。 */
+  setRelayE2EE(v: boolean): void {
+    this.relayE2EE = v;
   }
 
   /** Start listening. Resolves with the actual port (useful for port 0). */
@@ -131,14 +164,28 @@ export class RemoteServer {
       }
       // WBS-M3-C: reject unauthenticated upgrades before any WS traffic.
       const token = this.auth.tokenFromCookieHeader(req.headers.cookie);
-      if (!this.auth.isValidSession(token)) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
-        socket.destroy();
+      if (this.auth.isValidSession(token)) {
+        this.wss!.handleUpgrade(req, socket, head, (ws) => {
+          this.registerClient(ws, false);
+        });
         return;
       }
-      this.wss!.handleUpgrade(req, socket, head, (ws) => {
-        this.registerClient(ws);
-      });
+      // WBS-R2-C: relay path — loopback origin may upgrade without a cookie,
+      // but the connection stays unauthenticated until a first-frame `auth`
+      // with the real access token (presented end-to-end by the remote client
+      // through the plugin's tunnel; the plugin never sees or holds it).
+      // 仅在显式启用中继时开放（默认关：无 cookie → 401 语义不变，TC-M3-04）。
+      const remote = req.socket.remoteAddress ?? '';
+      const isLoopback =
+        remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+      if (this.allowRelayFirstFrameAuth && isLoopback && !this.auth.isRelayLocked()) {
+        this.wss!.handleUpgrade(req, socket, head, (ws) => {
+          this.registerClient(ws, true);
+        });
+        return;
+      }
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      socket.destroy();
     });
 
     this.subscribeRegistry();
@@ -292,8 +339,17 @@ export class RemoteServer {
 
   // ---------- WS wiring ----------
 
-  private registerClient(ws: WebSocket): void {
-    const client: ClientState = { ws, attached: new Set(), sawPong: true };
+  private registerClient(ws: WebSocket, pendingAuth: boolean): void {
+    const client: ClientState = {
+      ws,
+      attached: new Set(),
+      sawPong: true,
+      authenticated: !pendingAuth,
+      authDeadline: null,
+      authNonce: null,
+      e2eeKey: null,
+      e2eeQueue: Promise.resolve(),
+    };
     this.clients.add(client);
 
     ws.on('pong', () => {
@@ -305,9 +361,11 @@ export class RemoteServer {
     });
 
     ws.on('close', () => {
+      if (client.authDeadline) clearTimeout(client.authDeadline);
       this.clients.delete(client);
     });
     ws.on('error', () => {
+      if (client.authDeadline) clearTimeout(client.authDeadline);
       this.clients.delete(client);
       try {
         ws.terminate();
@@ -315,6 +373,17 @@ export class RemoteServer {
         /* already dead */
       }
     });
+
+    if (pendingAuth) {
+      // R-M4-A: 挑战应答——连接即下发 nonce，Token 明文不再经过中继/插件。
+      // WBS-R2-C 语义保留：认证前零业务流量、无 bootstrap 推送、5s 时限。
+      client.authNonce = this.auth.issueRelayNonce();
+      this.sendTo(client, { type: 'auth-challenge', nonce: client.authNonce } as WsAuthChallengeMsg);
+      client.authDeadline = setTimeout(() => {
+        this.failWith(client, WS.ERROR_CODES.AUTH_REQUIRED, 'auth timeout');
+      }, WS.RELAY_AUTH_TIMEOUT_MS);
+      return;
+    }
 
     // Zero-latency bootstrap: push the current tab list immediately.
     this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
@@ -335,7 +404,83 @@ export class RemoteServer {
       return;
     }
 
+    // R-M4-B: 加密连接上业务帧必须走 secure 信封（明文业务帧 = 协议违例）。
+    if (msg.type === 'secure') {
+      if (!client.e2eeKey) {
+        this.failWith(client, WS.ERROR_CODES.BAD_MESSAGE, 'unexpected secure frame');
+        return;
+      }
+      void openFrame(client.e2eeKey, raw)
+        .then((inner) => {
+          const parsed = inner === null ? null : parseClientMessage(inner);
+          if (!parsed || parsed.type === 'secure') {
+            this.failWith(client, WS.ERROR_CODES.BAD_MESSAGE, 'bad secure frame');
+            return;
+          }
+          this.dispatchClient(client, parsed);
+        })
+        .catch(() => {
+          this.failWith(client, WS.ERROR_CODES.BAD_MESSAGE, 'bad secure frame');
+        });
+      return;
+    }
+    if (client.e2eeKey) {
+      this.failWith(client, WS.ERROR_CODES.BAD_MESSAGE, 'plaintext frame on encrypted connection');
+      return;
+    }
+    this.dispatchClient(client, msg);
+  }
+
+  /** 已解析（必要时已解密）业务帧的统一入口：认证门 + 分发。 */
+  private dispatchClient(client: ClientState, msg: ClientMessage): void {
+    // WBS-R2-C / R-M4-A: relay path gate — everything but `auth-response`
+    // requires a completed challenge-response; 明文 `auth` 在 relay 路径不再
+    // 被接受（Token 不得以明文经过中继）。
+    if (!client.authenticated && msg.type !== 'auth-response') {
+      this.failWith(client, WS.ERROR_CODES.AUTH_REQUIRED, 'auth first');
+      return;
+    }
+
     switch (msg.type) {
+      case 'auth-response': {
+        if (client.authenticated) {
+          this.failWith(client, WS.ERROR_CODES.BAD_MESSAGE, 'already authenticated');
+          return;
+        }
+        const nonce = client.authNonce ?? '';
+        client.authNonce = null; // 单次有效（AuthManager 侧同样即焚）
+        const verdict = this.auth.verifyRelayMac(nonce, msg.mac);
+        if (verdict.locked) {
+          this.failWith(client, WS.ERROR_CODES.RATE_LIMITED, 'too many relay auth failures');
+          return;
+        }
+        if (!verdict.ok) {
+          this.failWith(client, WS.ERROR_CODES.AUTH_DENIED, 'invalid response');
+          return;
+        }
+        client.authenticated = true;
+        if (client.authDeadline) {
+          clearTimeout(client.authDeadline);
+          client.authDeadline = null;
+        }
+        if (this.relayE2EE && msg.enc === 1) {
+          // R-M4-B：先派生会话密钥再回 auth-ok{enc:1}，此后双向全密文。
+          void this.auth
+            .deriveRelaySessionKey(nonce)
+            .then((key) => {
+              client.e2eeKey = key;
+              this.sendTo(client, { type: 'auth-ok', enc: 1 } as WsAuthOkMsg);
+              this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
+            })
+            .catch(() => {
+              this.failWith(client, WS.ERROR_CODES.AUTH_DENIED, 'e2ee unavailable');
+            });
+          return;
+        }
+        this.sendTo(client, { type: 'auth-ok' } as WsAuthOkMsg);
+        this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
+        return;
+      }
       case 'list':
         this.sendTo(client, { type: 'tabs', tabs: this.registry.list() });
         return;
@@ -405,6 +550,24 @@ export class RemoteServer {
   }
 
   private failWith(client: ClientState, code: number, message: string): void {
+    // R-M4-B: 加密连接上错误帧也要 seal，且 close 必须排在 seal 完成之后
+    // （同步 close 会抢在异步 seal 前，错误帧就永远上不了线路）。
+    if (client.e2eeKey) {
+      client.e2eeQueue = client.e2eeQueue
+        .then(async () => {
+          const wire = await sealFrame(client.e2eeKey as CryptoKey, encodeServerMessage({ type: 'error', code, message } as WsErrorMsg));
+          this.rawSend(client, wire);
+          client.ws.close(1008, message);
+        })
+        .catch(() => {
+          try {
+            client.ws.terminate();
+          } catch {
+            /* already dead */
+          }
+        });
+      return;
+    }
     try {
       this.sendTo(client, { type: 'error', code, message } as WsErrorMsg);
       client.ws.close(1008, message);
@@ -488,6 +651,24 @@ export class RemoteServer {
 
   /** Backpressure-aware send: never throws, cuts slow clients instead. */
   private sendTo(client: ClientState, msg: ServerMessage): void {
+    // R-M4-B: 加密连接上业务帧一律 seal（auth-ok 本身明文，先于密钥生效）。
+    // 经 per-client Promise 链串行，保证 seal 完成顺序 = 发送顺序。
+    if (client.e2eeKey && msg.type !== 'auth-ok') {
+      const plain = encodeServerMessage(msg);
+      client.e2eeQueue = client.e2eeQueue
+        .then(async () => {
+          const wire = await sealFrame(client.e2eeKey as CryptoKey, plain);
+          this.rawSend(client, wire);
+        })
+        .catch(() => {
+          /* 下游断开等：rawSend 已自愈 */
+        });
+      return;
+    }
+    this.rawSend(client, encodeServerMessage(msg));
+  }
+
+  private rawSend(client: ClientState, wire: string): void {
     if (client.ws.readyState !== WebSocket.OPEN) return;
     if (client.ws.bufferedAmount > this.slowClientBytes) {
       client.ws.terminate();
@@ -495,7 +676,7 @@ export class RemoteServer {
       return;
     }
     try {
-      client.ws.send(encodeServerMessage(msg));
+      client.ws.send(wire);
     } catch {
       this.clients.delete(client);
     }

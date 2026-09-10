@@ -10,6 +10,26 @@
 //                   new QR immediately, restart-free
 //   退出          — single shutdown() path (TC-M4-07)
 import { app, Tray, Menu, clipboard, nativeImage, BrowserWindow } from 'electron';
+import type { InstanceIdentity } from './instanceIdentity';
+
+/** 亮度掩模染色：像素亮度 → 实例色（alpha 保留），形状不变颜色变。 */
+function tintByLuminance(img: Electron.NativeImage, colorHex: string): Electron.NativeImage {
+  const size = img.getSize();
+  const bitmap = img.getBitmap(); // BGRA
+  const h = colorHex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const out = Buffer.alloc(bitmap.length);
+  for (let i = 0; i < bitmap.length; i += 4) {
+    const lum = (bitmap[i] * 299 + bitmap[i + 1] * 587 + bitmap[i + 2] * 114) / 1000 / 255;
+    out[i] = Math.round(b * lum); // BGRA 顺序
+    out[i + 1] = Math.round(g * lum);
+    out[i + 2] = Math.round(r * lum);
+    out[i + 3] = bitmap[i + 3];
+  }
+  return nativeImage.createFromBitmap(out, { width: size.width, height: size.height });
+}
 import * as path from 'path';
 import * as os from 'os';
 import QRCode from 'qrcode';
@@ -17,6 +37,7 @@ import type { AuthManager } from './authManager';
 import { t, Locale } from '../shared/i18n';
 
 export interface TrayDeps {
+  identity: InstanceIdentity;
   auth: AuthManager;
   /** UI locale (main detects once from app.getLocale()). */
   locale: Locale;
@@ -26,6 +47,15 @@ export interface TrayDeps {
   showWindow: () => void;
   /** Full application shutdown: PTYs, server, quit. */
   shutdown: () => Promise<void> | void;
+  /** R-M2 relay surface (optional — absent when relay code path disabled). */
+  relay?: {
+    /** off = 未启用 / conn = 连接中 / on = 已注册（TC-R2-01 tray 状态）。 */
+    state: () => 'off' | 'conn' | 'on';
+    /** 生成分享链接并写剪贴板；返回是否成功。 */
+    copyShareLink: () => Promise<boolean>;
+    /** 生成分享链接（不写剪贴板），供信息窗二维码展示；null = 不可用。 */
+    shareUrl: () => Promise<string | null>;
+  };
 }
 
 export class TrayController {
@@ -60,8 +90,12 @@ export class TrayController {
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
       );
     }
+    // 多实例：托盘图标按实例色染色（亮度掩模：原图亮度→实例色，保形状与透明度）
+    const identity = this.deps.identity;
+    if (!identity.isDefault) image = tintByLuminance(image, identity.color);
     this.tray = new Tray(image);
-    this.tray.setToolTip(`Ternimal — https://${lanIp()}:${this.deps.getPort()}`);
+    const label = identity.isDefault ? 'Ternimal' : `Ternimal [${identity.id}]`;
+    this.tray.setToolTip(`${label} — https://${lanIp()}:${this.deps.getPort()}`);
     this.rebuildMenu();
   }
 
@@ -69,41 +103,68 @@ export class TrayController {
   rebuildMenu(): void {
     if (!this.tray) return;
     const deps = this.deps;
-    this.tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: t(deps.locale, 'tray.show'), click: () => deps.showWindow() },
-        { type: 'separator' },
-        {
-          label: t(deps.locale, 'tray.copyUrl'),
-          click: () => {
-            clipboard.writeText(this.accessUrl());
-          },
+    const relayState = deps.relay?.state() ?? 'off';
+    const menu: Electron.MenuItemConstructorOptions[] = [
+      // 首行：本托盘所属实例名（多实例下点开即知是哪一个；不可点击的标识行）
+      { label: `Ternimal · ${deps.identity.id}`, enabled: false },
+      { type: 'separator' },
+      { label: t(deps.locale, 'tray.show'), click: () => deps.showWindow() },
+      { type: 'separator' },
+      {
+        label: t(deps.locale, 'tray.copyUrl'),
+        click: () => {
+          clipboard.writeText(this.accessUrl());
         },
-        {
-          label: t(deps.locale, 'tray.viewAccess'),
+      },
+    ];
+    if (relayState !== 'off') {
+      menu.push({
+        label:
+          relayState === 'on'
+            ? t(deps.locale, 'tray.relay.on')
+            : t(deps.locale, 'tray.relay.conn'),
+        enabled: false,
+      });
+      if (relayState === 'on') {
+        menu.push({
+          label: t(deps.locale, 'tray.relay.copyShare'),
           click: () => {
-            void this.showAccessInfo();
+            void deps.relay!.copyShareLink();
           },
+        });
+      }
+      menu.push({ type: 'separator' });
+    }
+    menu.push(
+      {
+        label: t(deps.locale, 'tray.viewAccess'),
+        click: () => {
+          void this.showAccessInfo();
         },
-        { type: 'separator' },
-        {
-          label: t(deps.locale, 'tray.rotateToken'),
-          click: () => {
-            deps.auth.rotateToken();
-            this.rebuildMenu();
-            void this.showAccessInfo(); // new QR immediately
-          },
+      },
+      { type: 'separator' },
+      {
+        label: t(deps.locale, 'tray.rotateToken'),
+        click: () => {
+          deps.auth.rotateToken();
+          this.rebuildMenu();
+          void this.showAccessInfo(); // new QR immediately
         },
-        { type: 'separator' },
-        {
-          label: t(deps.locale, 'tray.quit'),
-          click: () => {
-            void deps.shutdown();
-          },
+      },
+      { type: 'separator' },
+      {
+        label: t(deps.locale, 'tray.quit'),
+        click: () => {
+          void deps.shutdown();
         },
-      ])
+      }
     );
-    this.tray.setToolTip(`Ternimal — ${this.accessUrl()}`);
+    this.tray.setContextMenu(Menu.buildFromTemplate(menu));
+    this.tray.setToolTip(
+      relayState === 'on'
+        ? `Ternimal — ${t(deps.locale, 'tray.relay.on')} — ${this.accessUrl()}`
+        : `Ternimal — ${this.accessUrl()}`
+    );
   }
 
   /** Access URL carrying the token in the FRAGMENT (never sent to the
@@ -112,11 +173,17 @@ export class TrayController {
     return `https://${lanIp()}:${this.deps.getPort()}/#T=${this.deps.auth.getToken()}`;
   }
 
-  /** Desktop window: QR code + URL + token + cert fingerprint. */
+  /** Desktop window: QR code + URL + token + cert fingerprint.
+   * TC-R2-02: 中继已连接时切换为中继分享链接二维码（远端扫码即入）。 */
   private async showAccessInfo(): Promise<void> {
+    const relayUrl =
+      this.deps.relay && this.deps.relay.state() === 'on'
+        ? await this.deps.relay.shareUrl().catch(() => null)
+        : null;
+    const displayUrl = relayUrl ?? this.accessUrl();
     let qrDataUrl = '';
     try {
-      qrDataUrl = await QRCode.toDataURL(this.accessUrl(), {
+      qrDataUrl = await QRCode.toDataURL(displayUrl, {
         width: 320,
         margin: 2,
         color: { dark: '#1e1e1e', light: '#ffffff' },
@@ -125,11 +192,12 @@ export class TrayController {
       // QR generation failing must not block showing textual info.
     }
     const html = accessInfoHtml({
-      url: this.accessUrl(),
+      url: displayUrl,
       token: this.deps.auth.getToken(),
       fingerprint: this.deps.certFingerprint,
       qrDataUrl,
       locale: this.deps.locale,
+      relayMode: !!relayUrl,
     });
     const encoded = 'data:text/html;charset=utf-8;base64,' + Buffer.from(html, 'utf8').toString('base64');
 
@@ -176,8 +244,12 @@ function accessInfoHtml(info: {
   fingerprint: string;
   qrDataUrl: string;
   locale: Locale;
+  relayMode?: boolean;
 }): string {
   const L = info.locale;
+  const heading = info.relayMode ? t(L, 'info.relayHeading') : t(L, 'info.heading');
+  const tip = info.relayMode ? t(L, 'info.relayTip') : t(L, 'info.tip');
+  const urlLabel = info.relayMode ? t(L, 'settings.relay.shareTip') : t(L, 'info.url');
   const qr = info.qrDataUrl
     ? `<img src="${info.qrDataUrl}" width="320" height="320" alt="QR">`
     : `<div class="err">${t(L, 'info.qrFailed')}</div>`;
@@ -200,10 +272,10 @@ function accessInfoHtml(info: {
 </style>
 </head>
 <body>
-  <h1>${t(L, 'info.heading')}</h1>
+  <h1>${heading}</h1>
   <div class="qr">${qr}</div>
-  <div class="tip">${t(L, 'info.tip').split('\n').join('<br>')}</div>
-  <div class="row"><b>${t(L, 'info.url')}</b><code>${info.url}</code></div>
+  <div class="tip">${tip.split('\n').join('<br>')}</div>
+  <div class="row"><b>${urlLabel}</b><code>${info.url}</code></div>
   <div class="row"><b>${t(L, 'info.token')}</b><code>${info.token}</code></div>
   <div class="row"><b>${t(L, 'info.fp')}</b><code>${info.fingerprint}</code></div>
 </body>

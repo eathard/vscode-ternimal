@@ -5,6 +5,7 @@
 
 import { ipcMain, BrowserWindow } from 'electron';
 import { SessionRegistry } from './sessionRegistry';
+import type { InstanceIdentity } from './instanceIdentity';
 import {
   IPC,
   SpawnRequest,
@@ -15,7 +16,8 @@ import {
 
 export function registerIpcHandlers(
   registry: SessionRegistry,
-  getWindow: () => BrowserWindow | null
+  getWindow: () => BrowserWindow | null,
+  identity?: InstanceIdentity
 ): void {
   const sendToRenderer = (channel: string, ...args: unknown[]) => {
     const win = getWindow();
@@ -33,6 +35,9 @@ export function registerIpcHandlers(
   registry.on('tabs', (tabs) => sendToRenderer(IPC.TABS_ON_CHANGE, tabs));
 
   // Create a session (ID is generated server-side; SpawnRequest.id ignored)
+  // 多实例：渲染层取实例配色/标签（标题栏与托盘对应的依据）
+  ipcMain.handle(IPC.APP_INSTANCE_INFO, () => identity ?? { id: 'default', isDefault: true, color: '#4a7fd6', barBg: '#181818', accent: '#4a7fd6' });
+
   ipcMain.handle(IPC.PTY_SPAWN, async (_event, request: SpawnRequest) => {
     return registry.create(request);
   });

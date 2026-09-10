@@ -9,6 +9,8 @@ import { TerminalTab, setInputTransform } from './terminalTab';
 import { TabBar } from './tabBar';
 import { SearchBar } from './searchBar';
 import { ThemeManager } from './themeManager';
+import { openRelaySettings } from './relaySettings';
+import { t, detectLocale } from '../shared/i18n';
 import {
   ModifierState,
   NO_MODIFIERS,
@@ -57,6 +59,14 @@ export class TerminalApp {
     this.tabBar.onTabSelect = (id) => this.switchTab(id);
     this.tabBar.onTabClose = (id) => this.closeTab(id);
     this.tabBar.onNewTab = () => void this.newTab();
+
+    // R-M2 (WBS-R2-E): relay settings gear — host window only; on the web
+    // bundle the transport seam never exposes relay admin, so the button is
+    // installed only when the preload API is present.
+    if (typeof window !== 'undefined' && (window as { electronAPI?: unknown }).electronAPI) {
+      const locale = detectLocale(navigator.language);
+      this.tabBar.addTrailingButton('⚙', t(locale, 'settings.gear'), () => openRelaySettings());
+    }
 
     // Web transport: attach-carried replay fills a freshly rendered tab
     // (first activation / browser refresh). Local IPC is unaffected.

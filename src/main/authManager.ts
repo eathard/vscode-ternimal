@@ -12,6 +12,7 @@
 // Testability: window/lock/TTL are injectable so verify-ratelimit.mjs can
 // run the semantics in milliseconds instead of minutes.
 import * as crypto from 'crypto';
+import { deriveSessionKey } from '../shared/e2ee';
 
 export const SESSION_COOKIE = 'ternimal_session';
 const DEFAULT_TTL_MS = 7 * 24 * 3600 * 1000; // 7 days, sliding
@@ -125,12 +126,99 @@ export class AuthManager {
     return !!rec && rec.lockedUntil > Date.now();
   }
 
+  // ---------- WBS-R2-C: relay/loopback first-frame auth ----------
+  // 中继管道经本机插件以无 cookie 的 WS 连入 RemoteServer；token 由远端
+  // 客户端端到端出示（授权码与 Token 双轨独立，relay-design §2）。
+  // 失败计数独立于 HTTP 登录（key 恒为 '__relay__'）：同一窗口内 5 次失败
+  // → 锁定 1 分钟，语义与 login() 一致且共用可注入的窗口/锁参数。
+
+  private static readonly RELAY_KEY = '__relay__';
+
+  /** Is the relay first-frame path currently locked out? */
+  isRelayLocked(): boolean {
+    return this.isLocked(AuthManager.RELAY_KEY);
+  }
+
+  /**
+   * Verify a first-frame token on the relay path.
+   * @returns ok = token valid; locked = currently rate-limited (implies !ok).
+   */
+  relayAuth(token: string): { ok: boolean; locked: boolean } {
+    const now = Date.now();
+    const rec = this.ips.get(AuthManager.RELAY_KEY);
+    if (rec && rec.lockedUntil > now) {
+      return { ok: false, locked: true };
+    }
+    if (this.verifyToken(token)) {
+      this.ips.delete(AuthManager.RELAY_KEY);
+      return { ok: true, locked: false };
+    }
+    this.recordFailure(AuthManager.RELAY_KEY, now);
+    const updated = this.ips.get(AuthManager.RELAY_KEY);
+    return { ok: false, locked: !!updated && updated.lockedUntil > now };
+  }
+
+  // ---------- R-M4-A: 挑战应答（Token 不再明文过 relay） ----------
+
+  private static readonly NONCE_TTL_MS = 30_000;
+  private static readonly NONCE_CAP = 256;
+  private relayNonces = new Map<string, number>(); // nonce → expiresAt
+
+  /** 签发单次有效 nonce（base64url 32B）。超量驱逐最旧。 */
+  issueRelayNonce(): string {
+    const now = Date.now();
+    // 顺手清扫过期项（顺带控容）
+    if (this.relayNonces.size > 0) {
+      for (const [n, exp] of this.relayNonces) {
+        if (exp <= now) this.relayNonces.delete(n);
+      }
+    }
+    while (this.relayNonces.size >= AuthManager.NONCE_CAP) {
+      const oldest = this.relayNonces.keys().next().value as string;
+      this.relayNonces.delete(oldest);
+    }
+    const nonce = crypto.randomBytes(32).toString('base64url');
+    this.relayNonces.set(nonce, now + AuthManager.NONCE_TTL_MS);
+    return nonce;
+  }
+
+  /**
+   * 校验挑战应答：mac == HMAC-SHA256(token, nonce)（hex，常数时间比较）。
+   * nonce 一次性（校验即焚，无论成败）→ 捕获重放无效；锁定语义与
+   * relayAuth/login() 一致（第 5 次失败即上锁）。
+   */
+  verifyRelayMac(nonce: string, mac: string): { ok: boolean; locked: boolean } {
+    const now = Date.now();
+    const rec = this.ips.get(AuthManager.RELAY_KEY);
+    if (rec && rec.lockedUntil > now) {
+      return { ok: false, locked: true };
+    }
+    const expiresAt = this.relayNonces.get(nonce);
+    this.relayNonces.delete(nonce); // 单次有效
+    const expected = expiresAt && expiresAt > now
+      ? crypto.createHmac('sha256', this.accessToken).update(nonce).digest('hex')
+      : '';
+    if (expected && /^[0-9a-f]{64}$/.test(mac) && crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(mac, 'hex'))) {
+      this.ips.delete(AuthManager.RELAY_KEY);
+      return { ok: true, locked: false };
+    }
+    this.recordFailure(AuthManager.RELAY_KEY, now);
+    const updated = this.ips.get(AuthManager.RELAY_KEY);
+    return { ok: false, locked: !!updated && updated.lockedUntil > now };
+  }
+
   /** Rotate the access token and invalidate every existing session. */
   rotateToken(): string {
     this.accessToken = generateAccessToken();
     this.sessions.clear();
     this.ips.clear();
+    this.relayNonces.clear();
     return this.accessToken;
+  }
+
+  /** R-M4-B: 从内部 token 派生中继 E2E 会话密钥（token 不出 AuthManager）。 */
+  deriveRelaySessionKey(nonce: string): Promise<CryptoKey> {
+    return deriveSessionKey(this.accessToken, nonce);
   }
 
   private recordFailure(ip: string, now: number): void {

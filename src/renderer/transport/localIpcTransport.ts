@@ -6,6 +6,10 @@ import type {
   DataPayload,
   ExitPayload,
   TitlePayload,
+  RelaySettingsDto,
+  RelayStatusEvent,
+  RelayShareLink,
+  RelaySubcodeInfo,
 } from '../../shared/ipcChannels';
 import type { TerminalTransport, Unsubscribe } from './transport';
 
@@ -25,6 +29,13 @@ declare global {
       getDefaultShell: () => Promise<string>;
       clipboardWrite: (text: string) => void;
       clipboardRead: () => Promise<string>;
+      // R-M2 relay admin surface (host window only)
+      relayGetSettings: () => Promise<RelaySettingsDto>;
+      relayApplySettings: (patch: Partial<RelaySettingsDto>) => Promise<RelaySettingsDto>;
+      relayShareLink: (label?: string, ttlHours?: number) => Promise<RelayShareLink>;
+      relayListSubcodes: () => Promise<RelaySubcodeInfo[]>;
+      relayRevokeSubcode: (id: string) => Promise<void>;
+      onRelayStatus: (callback: (status: RelayStatusEvent) => void) => () => void;
     };
   }
 }

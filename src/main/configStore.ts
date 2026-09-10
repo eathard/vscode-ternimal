@@ -4,6 +4,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+export interface RelayConfig {
+  enabled: boolean;
+  /** Relay base URL, e.g. https://relay.example.com (Caddy 前置) */
+  url: string;
+  /**
+   * R-M4-B：中继路径端到端加密（AES-256-GCM，HKDF(token, nonce)）。
+   * 默认关；开启后对请求加密的中继连接生效，relay/插件只见密文。
+   */
+  e2ee: boolean;
+  /** 主码（trelay_v1_…）— 仅在插件子进程与管理 API 调用中使用 */
+  masterCode: string;
+  /** 退出时清除主码（偏执模式，方案书 §4.1） */
+  clearMasterCodeOnExit: boolean;
+  /**
+   * LAN 直连与中继双开（方案书 §8-Q3）：中继启用时默认收窄 loopback，
+   * true = 保持 0.0.0.0 监听（设置面板显式切换并提示暴露面变化）。
+   */
+  lanDirect: boolean;
+}
+
 export interface AppConfig {
   port: number;
   host: string;
@@ -11,6 +31,7 @@ export interface AppConfig {
   certPath: string; // '' = managed self-signed under certDir
   replayBufferBytes: number;
   maxSessions: number;
+  relay: RelayConfig;
 }
 
 const DEFAULTS: AppConfig = {
@@ -20,6 +41,7 @@ const DEFAULTS: AppConfig = {
   certPath: '',
   replayBufferBytes: 1024 * 1024,
   maxSessions: 16,
+  relay: { enabled: false, url: '', masterCode: '', clearMasterCodeOnExit: false, lanDirect: false, e2ee: false },
 };
 
 export class ConfigStore {
@@ -35,7 +57,7 @@ export class ConfigStore {
     let cfg: AppConfig;
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      cfg = { ...DEFAULTS, ...raw };
+      cfg = { ...DEFAULTS, ...raw, relay: { ...DEFAULTS.relay, ...(raw.relay ?? {}) } };
     } catch {
       cfg = { ...DEFAULTS };
     }

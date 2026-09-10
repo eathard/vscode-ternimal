@@ -3,6 +3,7 @@
 // Channel names/payloads stay aligned with the WS protocol (M2, wsProtocol.ts).
 
 export const IPC = {
+  APP_INSTANCE_INFO: 'app:instance-info',
   // PTY lifecycle (routed through SessionRegistry since M1)
   PTY_SPAWN: 'pty:spawn',
   PTY_WRITE: 'pty:write',
@@ -19,7 +20,61 @@ export const IPC = {
 
   // Shell detection
   GET_DEFAULT_SHELL: 'shell:getDefault',
+
+  // Relay plugin (R-M2): settings panel + share links + subcode admin
+  RELAY_GET_SETTINGS: 'relay:getSettings',
+  RELAY_APPLY_SETTINGS: 'relay:applySettings',
+  RELAY_ON_STATUS: 'relay:onStatus',
+  RELAY_SHARE_LINK: 'relay:shareLink',
+  RELAY_LIST_SUBCODES: 'relay:listSubcodes',
+  RELAY_REVOKE_SUBCODE: 'relay:revokeSubcode',
 } as const;
+
+// ---------- Relay plugin (R-M2, relay-design §4) ----------
+
+export type RelayPluginState = 'stopped' | 'starting' | 'registered' | 'reconnecting';
+
+/** Settings panel DTO (main → renderer); mirrors configStore.relay + live state. */
+export interface RelaySettingsDto {
+  enabled: boolean;
+  url: string;
+  masterCode: string;
+  clearMasterCodeOnExit: boolean;
+  lanDirect: boolean;
+  /** R-M4-B：中继 E2E 加密开关（生效于此后新建的认证会话）。 */
+  e2ee: boolean;
+  /** Live plugin state ('stopped' when not running). */
+  state: RelayPluginState;
+  /** Effective server bind address (informational). */
+  hostBinding: string;
+  /** True = binding/auth-surface change needs an app restart to take effect. */
+  restartRequired: boolean;
+}
+
+export interface RelayStatusEvent {
+  state: RelayPluginState;
+  detail: string;
+  pipes: number;
+  /** 插件子进程 pid（0 = 未知）。 */
+  pid: number;
+}
+
+export interface RelayShareLink {
+  /** https://relay/#S=<subCode>&T=<token> — fragments never hit server logs. */
+  url: string;
+  subCode: string;
+  expiresAt: number;
+}
+
+export interface RelaySubcodeInfo {
+  id: string;
+  code: string;
+  label: string;
+  createdAt: number;
+  expiresAt: number;
+  revoked: boolean;
+  stats: { bytes: number; joins: number };
+}
 
 export interface SpawnRequest {
   /**
