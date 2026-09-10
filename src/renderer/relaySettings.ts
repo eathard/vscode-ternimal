@@ -81,6 +81,8 @@ function buildPanel(): HTMLElement {
     form.appendChild(row);
   }
 
+  const caInput = labeledInput(form, t(locale, 'settings.relay.caPath'), 'text');
+
   const lanRow = el('label', 'rs-row');
   const lanDirect = document.createElement('input');
   lanDirect.type = 'checkbox';
@@ -185,6 +187,7 @@ function buildPanel(): HTMLElement {
           clearMasterCodeOnExit: clearOnExit.checked,
           lanDirect: lanDirect.checked,
           e2ee: e2ee.checked,
+          caPath: caInput.value.trim(),
         });
         restartNote.classList.toggle('rs-hidden', !next.restartRequired);
         statusValue.textContent = t(locale, `settings.relay.state.${next.state}`);
@@ -210,6 +213,7 @@ function buildPanel(): HTMLElement {
       lanDirect.checked = s.lanDirect;
       clearOnExit.checked = s.clearMasterCodeOnExit;
       e2ee.checked = !!s.e2ee;
+      caInput.value = s.caPath ?? '';
       statusValue.textContent = t(locale, `settings.relay.state.${s.state}`);
       restartNote.classList.toggle('rs-hidden', !s.restartRequired);
     } catch (err) {

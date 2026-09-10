@@ -5,6 +5,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 export interface RelayConfig {
+  /** 自签 relay 根证书 PEM 路径（如 Caddy internal CA）；主/子进程 TLS 信任用 */
+  caPath: string;
   enabled: boolean;
   /** Relay base URL, e.g. https://relay.example.com (Caddy 前置) */
   url: string;
@@ -41,7 +43,7 @@ const DEFAULTS: AppConfig = {
   certPath: '',
   replayBufferBytes: 1024 * 1024,
   maxSessions: 16,
-  relay: { enabled: false, url: '', masterCode: '', clearMasterCodeOnExit: false, lanDirect: false, e2ee: false },
+  relay: { enabled: false, url: '', masterCode: '', clearMasterCodeOnExit: false, lanDirect: false, e2ee: false, caPath: '' },
 };
 
 export class ConfigStore {

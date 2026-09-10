@@ -82,6 +82,7 @@ export class RelayController {
       clearMasterCodeOnExit: cfg.clearMasterCodeOnExit,
       lanDirect: cfg.lanDirect,
       e2ee: process.env.TERNIMAL_RELAY_E2EE === '1' || cfg.e2ee,
+      caPath: cfg.caPath || '',
       state: this.host.currentState,
       hostBinding: this.deps.serverHost,
       restartRequired: enabled && (bindingChanged || authChanged),
@@ -103,6 +104,7 @@ export class RelayController {
       masterCode,
       localPort: this.deps.getPort(),
       fingerprint: this.deps.fingerprint,
+      caPath: this.deps.configStore.load().relay.caPath || '',
     };
     this.host.start(cfg);
   }
@@ -118,6 +120,7 @@ export class RelayController {
       clearMasterCodeOnExit: patch.clearMasterCodeOnExit ?? cfg.relay.clearMasterCodeOnExit,
       lanDirect: patch.lanDirect ?? cfg.relay.lanDirect,
       e2ee: patch.e2ee ?? cfg.relay.e2ee,
+      caPath: (patch.caPath ?? cfg.relay.caPath).trim(),
     };
     if (next.enabled && (!next.url || !next.masterCode)) {
       throw new Error('relay enabled but url/masterCode missing');

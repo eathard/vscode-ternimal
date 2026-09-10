@@ -23,6 +23,21 @@ const INSTANCE_ID = resolveInstanceId(process.argv, process.env);
 const INSTANCE_COLOR = isolateUserData(app, INSTANCE_ID);
 const INSTANCE = instanceIdentity(INSTANCE_ID, INSTANCE_COLOR);
 
+// 自签 relay 根证书（relay.caPath）：实例 userData 已定向后读取，
+// 尽早注入主进程 NODE_EXTRA_CA_CERTS（管理端 API fetch 的 TLS 信任）。
+// 插件子进程由 pluginHost.fork 再显式注入，双保险。
+{
+  try {
+    const caPath = new ConfigStore(path.join(app.getPath('userData'), 'config')).load().relay.caPath;
+    if (caPath) {
+      const cur = process.env.NODE_EXTRA_CA_CERTS ?? '';
+      if (!cur.split(path.delimiter).includes(caPath)) {
+        process.env.NODE_EXTRA_CA_CERTS = cur ? `${cur}${path.delimiter}${caPath}` : caPath;
+      }
+    }
+  } catch { /* 读不到配置 = 无覆盖，走默认 CA */ }
+}
+
 // Single Sources of Truth, wired in whenReady (paths need a ready app).
 let mainWindow: BrowserWindow | null = null;
 let registry: SessionRegistry | null = null;

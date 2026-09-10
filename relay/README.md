@@ -69,3 +69,9 @@ TLS 路径、trustedProxy、webRoot 与全部阈值（子码 TTL、并发管道�
 - 子码短 TTL + 可吊销；子码泄露只需吊销，不影响主码；
 - relay 见不到 Ternimal Token 的校验（端到端发生在内网主机）；
   E2E 加密（挑战应答 + AES-GCM）在 R-M4 落地，公开服务前必须启用。
+
+## 客户端连自签 relay（Caddy internal CA 等）
+
+Node 不读系统 CA 库——自签 relay 需在客户端配置根证书：设置面板
+「CA 证书路径」填 PEM 路径（或 config `relay.caPath`），主进程与插件
+子进程会自动注入信任；公共 CA（Let's Encrypt 等）留空即可。

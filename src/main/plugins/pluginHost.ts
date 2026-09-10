@@ -9,6 +9,13 @@
 // 控制通道断链由插件子进程内部退避重连（TC-R2-08）。
 
 import { utilityProcess, type UtilityProcess, app } from 'electron';
+
+/** NODE_EXTRA_CA_CERTS 合并语义（多个来源用冒号拼接，保留既有值）。 */
+function caEnvSet(env: NodeJS.ProcessEnv, caPath: string): void {
+  const cur = env.NODE_EXTRA_CA_CERTS ?? '';
+  if (cur.split(path.delimiter).includes(caPath)) return;
+  env.NODE_EXTRA_CA_CERTS = cur ? `${cur}${path.delimiter}${caPath}` : caPath;
+}
 import * as path from 'path';
 import { EventEmitter } from 'events';
 
@@ -16,6 +23,8 @@ export interface RelayPluginConfig {
   relayUrl: string;
   masterCode: string;
   localPort: number;
+  /** 自签 relay 根证书 PEM（子进程 NODE_EXTRA_CA_CERTS 用）；空 = 公共 CA */
+  caPath: string;
   /** 本机自签证书 SHA-256 指纹（colon-hex）；空 = 跳过钉扎（仅开发）。 */
   fingerprint: string;
 }
@@ -86,9 +95,15 @@ export class RelayPluginHost extends (EventEmitter as new () => RelayPluginEvent
   private spawn(): void {
     if (!this.cfg) return;
     this.state = 'starting';
+    const childEnv = { ...process.env };
+    if (this.cfg?.caPath) {
+      // 自签 relay（如 Caddy internal CA）：子进程 Node 信任该根证书
+      caEnvSet(childEnv, this.cfg.caPath);
+    }
     const child = utilityProcess.fork(RelayPluginHost.modulePath(), [], {
       serviceName: 'ternimal-relay-plugin',
       stdio: 'inherit',
+      env: childEnv,
     });
     this.child = child;
 

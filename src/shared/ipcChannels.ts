@@ -43,6 +43,8 @@ export interface RelaySettingsDto {
   lanDirect: boolean;
   /** R-M4-B：中继 E2E 加密开关（生效于此后新建的认证会话）。 */
   e2ee: boolean;
+  /** 自签 relay 根证书 PEM 路径（公共 CA/明文 relay 留空）。 */
+  caPath: string;
   /** Live plugin state ('stopped' when not running). */
   state: RelayPluginState;
   /** Effective server bind address (informational). */
