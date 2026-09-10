@@ -79,6 +79,7 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - Webpack outputs: `dist/main/` (main.js + preload.js) and `dist/renderer/` (renderer.js + index.html). `package.json` `main` points to `dist/main/main.js`
 - **Linux requires `--no-sandbox`**: `src/main/main.ts` appends it at runtime for Linux (Deepin SUID sandbox crashes). `build/afterPack.js` additionally rewrites the packaged Linux binary as a bash wrapper that removes `chrome-sandbox` and auto-retries on exit codes 133/134 (Chromium startup crashes)
 - Packaging config lives in `electron-builder.yml` (not in package.json); output goes to `release/`
+- **Packaged Linux binary is a bash wrapper** (`/usr/bin/ternimal` → spawns `/opt/Ternimal/ternimal.real`): killing the wrapper does NOT kill the app. Cleanup patterns must match `ternimal.real` (or the Electron binary path), or orphaned instances keep running — and two instances sharing one master code produce a relay takeover-reconnect war
 - `vscode-src/` is a placeholder for reference material and is excluded from builds and packaging
 - **`ws` must stay a webpack external** (`webpack.main.config.js`): bundling it deadlocks the main event loop after the first outbound broadcast (documented in `docs/test-reports/` M2 §4). Same for `node-pty`
 - Web bundle is served by the app itself under `/static/` — `webpack.web.config.js` sets `output.publicPath: '/static/'`; relative asset URLs 404 in real browsers
