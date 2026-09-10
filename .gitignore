@@ -33,3 +33,8 @@ Thumbs.db
 
 # Electron
 out/
+
+# relay 运行时配置（含主码哈希，勿提交）
+relay/relay-config.json
+relay/relay-config.json.tmp
+relay/node_modules/

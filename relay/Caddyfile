@@ -1,0 +1,18 @@
+# relay/Caddyfile — 生产部署示例（方案书 §3.7 / D-R5）
+#
+# 用法：将 relay.example.com 替换为实际域名，`caddy run --config relay/Caddyfile`。
+# Caddy 自动签发/续期 Let's Encrypt 证书，WebSocket 原生透传（无超时坑）。
+
+relay.example.com {
+	# relay 本体监听 127.0.0.1:8080（relay/relay-config.json 默认值）
+	reverse_proxy 127.0.0.1:8080
+
+	# 长连接：禁用流式空闲超时（管道为常驻 WS）
+	# （Caddy v2 默认对 reverse_proxy 无 read timeout，WS 升级自动处理；
+	#   此注释保留给从 Nginx 迁移的运维对照。）
+}
+
+# ---- 无域名 / 纯内网验证的替代形态（--insecure 或自签 TLS）----
+# :8443 {
+# 	reverse_proxy 127.0.0.1:8080
+# }

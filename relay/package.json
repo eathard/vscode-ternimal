@@ -1,0 +1,15 @@
+{
+  "name": "ternimal-relay",
+  "version": "0.1.0",
+  "description": "Ternimal relay server — 控制面/数据面纯字节管道中继（docs/relay-design.md）",
+  "type": "module",
+  "bin": { "ternimal-relay": "cli.mjs" },
+  "scripts": {
+    "add-master": "node cli.mjs add-master",
+    "serve": "node cli.mjs serve"
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
+  },
+  "engines": { "node": ">=18" }
+}
