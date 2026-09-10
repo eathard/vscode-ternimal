@@ -232,7 +232,7 @@ footer .sig{color:var(--phosphor)}
       </div>
       <div class="beam" id="beam" aria-hidden="true"></div>
     </div>
-    <p class="mirror-caption" data-i18n="mirror_caption">both screens show one PTY — what you type lands in <b>both</b>, exactly how your devices attach at home</p>
+    <p class="mirror-caption" data-i18n="mirror_caption">both screens show one PTY — what you type lands in <b>both</b>, exactly how your real devices attach at home</p>
   </div>
 </header>
 
@@ -388,7 +388,7 @@ en: {
   cta_start:"Get started", cta_github:"View on GitHub",
   try_hint:'↓ this terminal is real — click it and type. it mirrors. <kbd>help</kbd> works.',
   dev_desktop:"desktop · electron", dev_phone:"browser · phone",
-  mirror_caption:'both screens show one PTY — what you type lands in <b>both</b>, exactly how your devices attach at home',
+  mirror_caption:'both screens show one PTY — what you type lands in <b>both</b>, exactly how your real devices attach at home',
   pain_h2:"The session you can't reach",
   pain_sub:"Every existing answer to “check on my terminal from the couch” gives you a different terminal than the one you left running.",
   pain_1:"<b>A brand-new session.</b> Your agent, your scrollback, your tabs — invisible.",
@@ -446,23 +446,23 @@ zh: {
   nav_why:"为何", nav_features:"特性", nav_security:"安全", nav_pricing:"价格", nav_install:"安装", nav_download:"↓ 下载",
   kicker:"开源 · 仅内网/VPN · 无云端",
   h1a:"随处可达，", h1b:'<span class="same">同一个</span>终端',
-  lede:'Ternimal 把你的桌面终端镜像到网络内的任意浏览器。扫一个二维码，手机就挂载到<strong>正在运行的那组标签</strong>上——连同滚动历史、Agent、和那行没敲完的命令。',
+  lede:'Ternimal 把你的桌面终端镜像到局域网内的任意浏览器。扫一个二维码，手机就挂载到<strong>正在运行的那组标签</strong>上——连同滚动历史、Agent 和那行没敲完的命令。',
   cta_start:"开始使用", cta_github:"在 GitHub 查看",
-  try_hint:'↓ 这个终端是真的 —— 点进去敲敲看，两块屏同步镜像。<kbd>help</kbd> 可用。',
+  try_hint:'↓ 这个终端是真的 —— 点进去敲敲看，两块屏幕会同时镜像你的输入。试试 <kbd>help</kbd>。',
   dev_desktop:"桌面 · Electron", dev_phone:"浏览器 · 手机",
-  mirror_caption:'两块屏显示的是同一个 PTY —— 你敲的字同时落在<b>两边</b>，就像家里设备真实的接入方式',
+  mirror_caption:'两块屏显示的是同一个 PTY —— 你敲的字同时落在<b>两边</b>，这正是你家里真实设备接入时的样子',
   pain_h2:"够不着的那次会话",
-  pain_sub:"对「躺在沙发上看看终端跑得怎么样」，所有现成答案给你的都是另一个终端，而不是你留下运行的那个。",
+  pain_sub:"想在沙发上看看终端跑得怎么样？所有现成方案给你的都是另一个终端——不是你留下运行的那个。",
   pain_1:"<b>一个全新的会话。</b>你的 Agent、滚动历史、标签页——全都看不见。",
-  pain_2:"<b>可行——但要仪式感。</b>前提是它跑在 tmux 里、你都配好了、每台机器都配了。",
-  pain_3:"<b>这是个 40 分钟的构建。</b>这集你看过了。",
+  pain_2:"<b>可行——但要仪式感。</b>前提是它跑在 tmux 里，而且每台机器都提前配好。",
+  pain_3:"<b>这是个 40 分钟的构建。</b>这集你已经看过了。",
   pain_4:"<b>你已经开着的会话，出现在你手里的屏幕上。</b>同一个 PTY，零配置。",
   feat_h2:"一个会话，每块屏幕",
   feat_sub:"以下全部截自真实会话——没有一张是示意图。",
   feat_1_h:"镜像会话",
   feat_1_p:"桌面窗口与局域网内任意浏览器通过 HTTPS 挂载同一组 PTY。刷新、断网、合上笔记本——会话继续活着，重连时环形缓冲回放你错过的内容。",
   feat_2_h:"扫码即入",
-  feat_2_p:"每次启动生成 192-bit 令牌，只存在于 URL 片段中——不抵达服务器、不进日志。托盘二维码一扫即入；轮换令牌即刻吊销所有会话。TLS 指纹双侧显示，中间人一眼识破。",
+  feat_2_p:"每次启动生成 192-bit 令牌，只存在于 URL 片段中——不会发送到服务器、不会写入日志。托盘二维码一扫即入；轮换令牌即刻吊销所有会话。TLS 指纹双侧显示，中间人一眼识破。",
   feat_3_h:"会说终端语言的键盘",
   feat_3_p:"粘滞 <code>Ctrl</code>/<code>Alt</code>/<code>Shift</code>——任意叠加、一次性复位——加上 <code>Esc</code>、<code>Tab</code> 和跟随终端光标模式的方向键。手机上 <code>Ctrl+C</code>、readline 跳词、vim 移动全可用。",
   feat_4_h:"零客户端安装",
@@ -485,10 +485,10 @@ zh: {
   sec_h2:"它刻意把 shell 搬上网络。",
   sec_p1:"这是功能，也是风险，所以边界是设计的一部分：仅 HTTPS、每次启动一个轮换令牌（恒时比对、经 URL 片段携带）、证书指纹双侧展示、每 IP 锁定、硬化 cookie——鉴权只存内存，重启即吊销一切。",
   sec_p2s:"只在内网或你自己的 VPN 里使用。", sec_p2:"不要端口转发到公网。",
-  relay_note:'需要跨网络访问？<a href="pricing.html">零知识中继</a>在不暴露你机器的前提下抵达任何网络。',
+  relay_note:'需要跨网络访问？<a href="pricing.html">零知识中继</a>让你不暴露机器，就能从任何网络连回来。',
   ins_h2:"两种安装方式",
   ins_a_h:"<span>a.</span> 下载安装包", ins_a_p:"每个 release 页面都提供 Linux AppImage 与 deb：", ins_a_link:"→ 发布页 ↓",
-  ins_b_h:"<span>b.</span> 从源码运行", ins_b_p:"首次启动会打印访问 URL，并在托盘放入二维码。",
+  ins_b_h:"<span>b.</span> 从源码运行", ins_b_p:"首次启动会打印访问 URL，托盘里也会出现二维码。",
   copy:"复制", copied:"已复制",
   ft_releases:"发布", ft_mit:"MIT 许可证",
   ft_credit:"灵感来自 VS Code 终端 · 基于 xterm.js + node-pty 构建",
