@@ -292,6 +292,11 @@ async function handleCommand(msg) {
       const r = await apiCall('DELETE', `/api/channels/subcodes/${encodeURIComponent(msg.subCodeId)}`);
       return reply(r.ok ? { ok: true } : { ok: false, status: r.status });
     }
+    if (msg.cmd === 'renew-subcode') {
+      const body = msg.permanent === true ? { permanent: true } : { days: msg.days };
+      const r = await apiCall('POST', `/api/channels/subcodes/${encodeURIComponent(msg.subCodeId)}/renew`, body);
+      return reply(r.ok ? { ok: true, expiresAt: r.expiresAt } : { ok: false, status: r.status });
+    }
     if (msg.cmd === 'ping') return reply({ ok: true, state, pipes: pipes.size });
     return reply({ ok: false, error: `unknown cmd ${msg.cmd}` });
   } catch (err) {

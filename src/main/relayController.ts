@@ -195,6 +195,11 @@ export class RelayController {
     await this.host.revokeSubCode(id);
   }
 
+  /** 子码续期（+N 天 / 转长期）；返回新 expiresAt。 */
+  async renewSubCode(id: string, opts: { days?: number; permanent?: boolean }): Promise<number | null> {
+    return this.host.renewSubCode(id, opts);
+  }
+
   // ---------- IPC ----------
 
   private broadcast(e: RelayStatusEvent): void {
@@ -212,6 +217,9 @@ export class RelayController {
     );
     ipcMain.handle(IPC.RELAY_LIST_SUBCODES, () => this.listSubCodes());
     ipcMain.handle(IPC.RELAY_REVOKE_SUBCODE, (_e, id: string) => this.revokeSubCode(id));
+    ipcMain.handle(IPC.RELAY_RENEW_SUBCODE, (_e, id: string, opts: { days?: number; permanent?: boolean }) =>
+      this.renewSubCode(id, opts)
+    );
   }
 
   unregisterIpc(): void {
@@ -221,6 +229,7 @@ export class RelayController {
       IPC.RELAY_SHARE_LINK,
       IPC.RELAY_LIST_SUBCODES,
       IPC.RELAY_REVOKE_SUBCODE,
+      IPC.RELAY_RENEW_SUBCODE,
     ]) {
       ipcMain.removeAllListeners(ch);
     }

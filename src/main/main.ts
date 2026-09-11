@@ -29,12 +29,8 @@ const INSTANCE = instanceIdentity(INSTANCE_ID, INSTANCE_COLOR);
 {
   try {
     const caPath = new ConfigStore(path.join(app.getPath('userData'), 'config')).load().relay.caPath;
-    if (caPath) {
-      const cur = process.env.NODE_EXTRA_CA_CERTS ?? '';
-      if (!cur.split(path.delimiter).includes(caPath)) {
-        process.env.NODE_EXTRA_CA_CERTS = cur ? `${cur}${path.delimiter}${caPath}` : caPath;
-      }
-    }
+    // 覆盖式：NODE_EXTRA_CA_CERTS 仅接受单一路径，冒号拼接会导致整串被忽略
+    if (caPath) process.env.NODE_EXTRA_CA_CERTS = caPath;
   } catch { /* 读不到配置 = 无覆盖，走默认 CA */ }
 }
 

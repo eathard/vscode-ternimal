@@ -275,6 +275,19 @@ function buildPanel(): HTMLElement {
   }
 }
 
+function fmtRemaining(expiresAt: number | null, revoked: boolean): string {
+  if (revoked) return t(locale, 'settings.relay.revokedTag');
+  if (expiresAt === null) return t(locale, 'settings.relay.permanent');
+  const ms = expiresAt - Date.now();
+  if (ms <= 0) return t(locale, 'settings.relay.expiredTag');
+  const h = Math.floor(ms / 3_600_000);
+  const d = Math.floor(h / 24);
+  if (d >= 1) return `≈${d}d ${h % 24}h`;
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (h >= 1) return `≈${h}h ${m}m`;
+  return `≈${m}m`;
+}
+
 async function refreshSubcodes(): Promise<void> {
   const list = overlay?.querySelector('.rs-sublist');
   if (!list) return;
@@ -288,8 +301,24 @@ async function refreshSubcodes(): Promise<void> {
     for (const sub of subs) {
       const row = el('div', 'rs-sub');
       row.appendChild(el('code', 'rs-sub-code', sub.code.slice(0, 14) + '…'));
-      const until = new Date(sub.expiresAt).toLocaleString();
-      row.appendChild(el('span', 'rs-sub-exp', `${t(locale, 'settings.relay.ttl')}: ${until}`));
+      // 剩余时效（长期/已过期/X天X时/X时X分），30 秒自刷新倒计时
+      const rem = el('span', 'rs-sub-rem', fmtRemaining(sub.expiresAt, sub.revoked));
+      row.appendChild(rem);
+      row.appendChild(el('span', 'rs-sub-exp', `${t(locale, 'settings.relay.ttl')}: ${sub.expiresAt === null ? t(locale, 'settings.relay.permanent') : new Date(sub.expiresAt).toLocaleString()}`));
+      if (!sub.revoked) {
+        for (const [label, opts] of [
+          [t(locale, 'settings.relay.renew1'), { days: 1 }],
+          [t(locale, 'settings.relay.renew7'), { days: 7 }],
+          [t(locale, 'settings.relay.renewP'), { permanent: true }],
+        ] as Array<[string, { days?: number; permanent?: boolean }]>) {
+          const btn = el('button', 'rs-button rs-small', label) as HTMLButtonElement;
+          btn.addEventListener('click', () => {
+            if (opts.permanent && !window.confirm(t(locale, 'settings.relay.renewPConfirm'))) return;
+            void window.electronAPI.relayRenewSubcode(sub.id, opts).then(refreshSubcodes);
+          });
+          row.appendChild(btn);
+        }
+      }
       const revoke = el('button', 'rs-button rs-small rs-danger', t(locale, 'settings.relay.revoke')) as HTMLButtonElement;
       revoke.disabled = sub.revoked;
       revoke.addEventListener('click', () => {

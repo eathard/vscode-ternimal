@@ -10,11 +10,12 @@
 
 import { utilityProcess, type UtilityProcess, app } from 'electron';
 
-/** NODE_EXTRA_CA_CERTS 合并语义（多个来源用冒号拼接，保留既有值）。 */
+/**
+ * NODE_EXTRA_CA_CERTS 注入（覆盖式：该变量只接受单一路径，冒号拼接会使整串失效）。
+ * 配置的 caPath 为权威来源；env 已有值时以配置覆盖。
+ */
 function caEnvSet(env: NodeJS.ProcessEnv, caPath: string): void {
-  const cur = env.NODE_EXTRA_CA_CERTS ?? '';
-  if (cur.split(path.delimiter).includes(caPath)) return;
-  env.NODE_EXTRA_CA_CERTS = cur ? `${cur}${path.delimiter}${caPath}` : caPath;
+  env.NODE_EXTRA_CA_CERTS = caPath;
 }
 import * as path from 'path';
 import { EventEmitter } from 'events';
@@ -216,6 +217,16 @@ export class RelayPluginHost extends (EventEmitter as new () => RelayPluginEvent
 
   async revokeSubCode(subCodeId: string): Promise<void> {
     await this.request({ cmd: 'revoke-subcode', subCodeId });
+  }
+
+  /** 子码续期：days 天顺延；permanent=true 转长期。返回新 expiresAt（长期=null）。 */
+  async renewSubCode(subCodeId: string, opts: { days?: number; permanent?: boolean }): Promise<number | null> {
+    const r = (await this.request({
+      cmd: 'renew-subcode', subCodeId,
+      days: opts.days, permanent: opts.permanent === true,
+    })) as { ok?: boolean; expiresAt?: number | null; status?: number };
+    if (!r?.ok) throw new Error(`renew failed (${r?.status ?? 'no reply'})`);
+    return r.expiresAt ?? null;
   }
 
   private request(payload: Record<string, unknown>): Promise<unknown> {

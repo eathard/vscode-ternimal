@@ -35,6 +35,7 @@ declare global {
       relayShareLink: (label?: string, ttlHours?: number) => Promise<RelayShareLink>;
       relayListSubcodes: () => Promise<RelaySubcodeInfo[]>;
       relayRevokeSubcode: (id: string) => Promise<void>;
+      relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => Promise<number | null>;
       onRelayStatus: (callback: (status: RelayStatusEvent) => void) => () => void;
     };
   }

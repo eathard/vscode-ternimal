@@ -28,6 +28,7 @@ export const IPC = {
   RELAY_SHARE_LINK: 'relay:shareLink',
   RELAY_LIST_SUBCODES: 'relay:listSubcodes',
   RELAY_REVOKE_SUBCODE: 'relay:revokeSubcode',
+  RELAY_RENEW_SUBCODE: 'relay:renewSubcode',
 } as const;
 
 // ---------- Relay plugin (R-M2, relay-design §4) ----------
@@ -73,7 +74,7 @@ export interface RelaySubcodeInfo {
   code: string;
   label: string;
   createdAt: number;
-  expiresAt: number;
+  expiresAt: number | null; // null = 长期（续期转永久）
   revoked: boolean;
   stats: { bytes: number; joins: number };
 }

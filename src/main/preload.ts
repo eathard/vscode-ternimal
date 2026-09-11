@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   relayRevokeSubcode: (id: string) => {
     return ipcRenderer.invoke(IPC.RELAY_REVOKE_SUBCODE, id);
   },
+  relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => {
+    return ipcRenderer.invoke(IPC.RELAY_RENEW_SUBCODE, id, opts);
+  },
   onRelayStatus: (callback: (status: unknown) => void) => {
     const handler = (_event: unknown, status: unknown) => callback(status);
     ipcRenderer.on(IPC.RELAY_ON_STATUS, handler);
