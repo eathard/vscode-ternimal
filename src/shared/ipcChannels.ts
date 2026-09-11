@@ -30,6 +30,8 @@ export const IPC = {
   RELAY_REVOKE_SUBCODE: 'relay:revokeSubcode',
   RELAY_RENEW_SUBCODE: 'relay:renewSubcode',
   RELAY_FORCE_REGISTER: 'relay:forceRegister',
+  RELAY_PREVIEW_TOKEN: 'relay:previewToken',
+  RELAY_APPLY_TOKEN: 'relay:applyToken',
 } as const;
 
 // ---------- Relay plugin (R-M2, relay-design §4) ----------
@@ -41,6 +43,15 @@ export type RelayPluginState =
   | 'reconnecting'
   | 'occupied' // 主码在另一台设备在线（非 force 注册被拒，30s 静默探测）
   | 'parked'; // 被人工强制接管：驻停，不再自动重连，等待夺回
+
+/** 混合口令预览摘要（主码掩码展示，防肩窥）。 */
+export interface RelayTokenPreview {
+  url: string;
+  masterPreview: string;
+  caFingerprint: string | null;
+  e2ee: boolean;
+  label: string;
+}
 
 /** Settings panel DTO (main → renderer); mirrors configStore.relay + live state. */
 export interface RelaySettingsDto {

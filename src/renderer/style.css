@@ -399,3 +399,50 @@ html, body {
 .rs-conflict-btn:hover {
   background: rgba(215, 186, 125, 0.15);
 }
+
+/* 混合口令一键配置卡片 */
+.rs-token-card {
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: rgba(14, 99, 156, 0.08);
+}
+.rs-token-title {
+  color: #d7ba7d;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.rs-token-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 54px;
+  resize: vertical;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  padding: 6px 8px;
+  word-break: break-all;
+}
+.rs-token-preview {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9a9a9a;
+  word-break: break-all;
+  line-height: 1.6;
+}
+.rs-token-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.rs-token-apply {
+  border-color: #d7ba7d;
+  color: #d7ba7d;
+}
+.rs-token-apply:hover {
+  background: rgba(215, 186, 125, 0.15);
+}

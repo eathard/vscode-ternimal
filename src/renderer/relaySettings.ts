@@ -72,6 +72,68 @@ function buildPanel(): HTMLElement {
 
   const form = el('div', 'rs-form');
 
+  // ---- 混合口令一键配置（国内无域名常态的主路径）：粘贴 → 预览核对 → 应用 ----
+  const tokenCard = el('div', 'rs-token-card');
+  tokenCard.appendChild(el('div', 'rs-token-title', t(locale, 'settings.relay.tokenTitle')));
+  const tokenInput = document.createElement('textarea');
+  tokenInput.className = 'rs-token-input';
+  tokenInput.spellcheck = false;
+  tokenInput.placeholder = t(locale, 'settings.relay.tokenPlaceholder');
+  tokenCard.appendChild(tokenInput);
+  const tokenPreview = el('div', 'rs-token-preview rs-hidden');
+  tokenCard.appendChild(tokenPreview);
+  const tokenRow = el('div', 'rs-token-row');
+  const btnPreview = el('button', 'rs-btn', t(locale, 'settings.relay.tokenPreviewBtn')) as HTMLButtonElement;
+  btnPreview.type = 'button';
+  const btnApply = el('button', 'rs-btn rs-token-apply rs-hidden', t(locale, 'settings.relay.tokenApplyBtn')) as HTMLButtonElement;
+  btnApply.type = 'button';
+  tokenRow.appendChild(btnPreview);
+  tokenRow.appendChild(btnApply);
+  tokenCard.appendChild(tokenRow);
+  form.appendChild(tokenCard);
+
+  btnPreview.addEventListener('click', () => {
+    void (async () => {
+      try {
+        tokenPreview.classList.add('rs-hidden');
+        btnApply.classList.add('rs-hidden');
+        const p = await window.electronAPI.relayPreviewToken(tokenInput.value);
+        tokenPreview.textContent =
+          `${t(locale, 'settings.relay.tokenServer')}: ${p.url}  ·  ` +
+          `${t(locale, 'settings.relay.tokenMaster')}: ${p.masterPreview}  ·  ` +
+          `${t(locale, 'settings.relay.tokenCa')}: ${p.caFingerprint ?? t(locale, 'settings.relay.tokenNoCa')}  ·  ` +
+          `E2EE: ${p.e2ee ? '✓' : '✗'}` +
+          (p.label ? `  ·  ${p.label}` : '');
+        tokenPreview.classList.remove('rs-hidden');
+        btnApply.classList.remove('rs-hidden');
+      } catch (err) {
+        setMsg(String(err), true);
+      }
+    })();
+  });
+  btnApply.addEventListener('click', () => {
+    void (async () => {
+      try {
+        const next = await window.electronAPI.relayApplyToken(tokenInput.value);
+        // 应用成功：全字段即时回填（地址/主码/证书路径/开关），状态由事件流刷新
+        enabled.checked = next.enabled;
+        urlInput.value = next.url;
+        masterInput.value = next.masterCode;
+        e2ee.checked = !!next.e2ee;
+        caInput.value = next.caPath ?? '';
+        statusValue.textContent = t(locale, `settings.relay.state.${next.state}`);
+        renderConflict(next.state);
+        tokenInput.value = '';
+        tokenPreview.classList.add('rs-hidden');
+        btnApply.classList.add('rs-hidden');
+        setMsg(t(locale, 'settings.relay.tokenApplied'), false);
+        void refreshSubcodes();
+      } catch (err) {
+        setMsg(String(err), true);
+      }
+    })();
+  });
+
   const enabledRow = el('label', 'rs-row');
   const enabled = document.createElement('input');
   enabled.type = 'checkbox';

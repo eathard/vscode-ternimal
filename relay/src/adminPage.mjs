@@ -69,6 +69,7 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
   var TOK = sessionStorage.getItem('adminTok') || '';
   var app = document.getElementById('app');
   var lastIss = null; // 最近签发主码（内存态；隐藏/刷新即弃，不落任何存储）
+  var lastTok = null; // 最近生成混合口令（内存态；同上）
   function fallbackCopy(txt) {
     var ta = document.createElement('textarea');
     ta.value = txt;
@@ -90,7 +91,10 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
       body: body ? JSON.stringify(body) : undefined,
     }).then(function (r) {
       if (r.status === 401) { TOK = ''; sessionStorage.removeItem('adminTok'); throw new Error('unauthorized'); }
-      return r.json().catch(function () { return {}; });
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.status >= 400) throw new Error((j && j.error) || ('HTTP ' + r.status));
+        return j;
+      });
     });
   }
 
@@ -182,6 +186,14 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
         h += '</div>';
       });
 
+      // 混合接入口令数据源：对外地址 + CA 公钥（绑定后签发/生成自动嵌入）
+      h += '<div class="card"><h3 style="margin:0 0 8px">接入配置（混合口令）</h3>' +
+        '<div class="row"><input id="ac-url" placeholder="对外地址 https://IP或域名" style="width:240px" value="' + esc((d.access && d.access.publicUrl) || '') + '">' +
+        (d.access && d.access.caBound ? '<span class="tag ok">CA 已绑定 ' + esc(d.access.caFingerprint || '') + '</span>' : '<span class="tag rev">CA 未绑定</span>') +
+        '<button id="ac-save">保存</button></div>' +
+        '<div class="row"><textarea id="ac-ca" placeholder="CA 公钥 PEM（自建部署=Caddy root.crt 内容；域名+公共CA 留空）" style="width:100%;height:52px;font-size:11px"></textarea></div>' +
+        '<div class="muted">用户购买后把「混合口令」整条发给他——App 里粘贴即自动配置地址/主码/证书。QR 说明：口令供桌面端粘贴，微信文本即达，无需扫码。</div></div>';
+
       // 主码生命周期（计费核心）：手动签发（带有效期）/续期/吊销，到期 sweep 自停
       h += '<div class="card"><h3 style="margin:0 0 8px">主码（付费通道）</h3>' +
         '<table><tr><th>id</th><th>标签</th><th>状态</th><th>到期</th><th>剩余</th><th></th></tr>';
@@ -198,6 +210,7 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
             '<button data-renew="' + esc(m.id) + '">+30天</button> ' +
             '<button data-renew7="' + esc(m.id) + '">+7天</button> ' +
             (m.status === 'revoked' ? '' : '<button class="danger" data-mrev="' + esc(m.id) + '">吊销</button>')) +
+          ' <button data-tok="' + esc(m.id) + '" title="粘贴该客户主码明文生成混合口令">口令</button>' +
           '</td></tr>';
       });
       h += '</table><div class="row">' +
@@ -217,7 +230,11 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           '<button id="iss-copy" class="primary">复制主码</button>' +
           '<button id="iss-hide">我已保存，隐藏</button></div>' +
           '<div class="muted">有效期至 ' + new Date(lastIss.expiresAt).toLocaleString() +
-          ' · 到期自动停止 · 续期在下方列表点 +30 天</div></div>';
+          ' · 到期自动停止 · 续期在下方列表点 +30 天</div>' +
+          (lastIss.token ? '<div class="row" style="margin-top:6px"><b style="color:#d7ba7d">混合口令（发这条即可，App 粘贴即配）</b><button id="tok-copy" class="primary">复制口令</button></div>' +
+            '<div class="row"><code id="tok-code" style="width:100%;font-size:10px;padding:6px;background:#111;border-radius:6px;word-break:break-all">' + esc(lastIss.token) + '</code></div>' +
+            '<div class="muted">含 地址+主码+CA证书 · 敏感度同主码，仅发给买家本人 · 校验段防截断</div>' : '') +
+          '</div>';
       }
 
       h += '<div class="card"><div class="row"><button id="csv">导出用量 CSV</button>' +
@@ -231,10 +248,39 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           label: (document.getElementById('m-label') || {}).value || '',
           days: Number((document.getElementById('m-days') || {}).value || 30),
         }).then(function (j) {
-          if (j.code) lastIss = { code: j.code, label: j.label || '', expiresAt: j.expiresAt };
+          if (j.code) lastIss = { code: j.code, label: j.label || '', expiresAt: j.expiresAt, token: j.token || null };
           render();
         });
       };
+      var acSave = document.getElementById('ac-save');
+      if (acSave) {
+        acSave.onclick = function () {
+          var pemEl = document.getElementById('ac-ca');
+          var body = { publicUrl: (document.getElementById('ac-url') || {}).value || '' };
+          if (pemEl && pemEl.value.trim()) body.caPem = pemEl.value.trim();
+          api('PUT', '/api/admin/access', body).then(function () { render(); }, function (e) { alert('保存失败: ' + (e && e.message ? e.message : e)); });
+        };
+      }
+      var tokCopy = document.getElementById('tok-copy');
+      if (tokCopy) {
+        tokCopy.onclick = function () {
+          var txt = (document.getElementById('tok-code') || {}).textContent || '';
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(txt).then(function () { tokCopy.textContent = '已复制 ✓'; setTimeout(function () { tokCopy.textContent = '复制口令'; }, 1600); });
+          } else { fallbackCopy(txt); tokCopy.textContent = '已复制 ✓'; }
+        };
+      }
+      Array.prototype.forEach.call(app.querySelectorAll('[data-tok]'), function (b) {
+        b.onclick = function () {
+          var code = prompt('粘贴该客户的主码明文（trelay_v1_…）生成混合口令：');
+          if (!code) return;
+          api('POST', '/api/admin/token', { code: code.trim() }).then(function (j) {
+            lastIss = lastIss || { code: '(已隐藏)', label: '口令生成', expiresAt: 0 };
+            lastIss.token = j.token; lastIss.label = '口令生成';
+            render();
+          }, function (e) { alert('生成失败: ' + (e && e.message ? e.message : e)); });
+        };
+      });
       var cpBtn = document.getElementById('iss-copy');
       if (cpBtn) {
         cpBtn.onclick = function () {

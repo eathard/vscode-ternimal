@@ -6,7 +6,7 @@ import type {
   DataPayload,
   ExitPayload,
   TitlePayload,
-  RelaySettingsDto,
+  RelaySettingsDto, RelayTokenPreview,
   RelayStatusEvent,
   RelayShareLink,
   RelaySubcodeInfo,
@@ -37,6 +37,8 @@ declare global {
       relayRevokeSubcode: (id: string, purge?: boolean) => Promise<void>;
       relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => Promise<number | null>;
       relayForceRegister: () => Promise<void>;
+      relayPreviewToken: (token: string) => Promise<RelayTokenPreview>;
+      relayApplyToken: (token: string) => Promise<RelaySettingsDto>;
       onRelayStatus: (callback: (status: RelayStatusEvent) => void) => () => void;
     };
   }

@@ -195,6 +195,7 @@ async function startRemoteServer(portOverride?: number): Promise<void> {
   // tray 与设置面板共享同一实例。
   relay = new RelayController({
     configStore,
+    certsDir: path.join(app.getPath('userData'), 'certs'),
     auth,
     getPort: () => remoteServer?.getPort() ?? port,
     fingerprint: tls.fingerprint,

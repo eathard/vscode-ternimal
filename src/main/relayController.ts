@@ -19,10 +19,16 @@ import {
   RelayStatusEvent,
   RelayShareLink,
   RelaySubcodeInfo,
+  RelayTokenPreview,
 } from '../shared/ipcChannels';
+import * as fs from 'fs';
+import * as path from 'path';
+import { decodeRelayToken, relayCaFingerprint } from './relayToken';
 
 export interface RelayControllerDeps {
   configStore: ConfigStore;
+  /** userData/certs —— 混合口令携带的 CA 公钥落盘处。 */
+  certsDir: string;
   auth: AuthManager;
   /** Actual listen port of the (already started) RemoteServer. */
   getPort: () => number;
@@ -205,6 +211,39 @@ export class RelayController {
     await this.host.forceRegister();
   }
 
+  /** 混合口令预览：解码出摘要（主码掩码），不写任何状态——应用前的人工核对步骤。 */
+  previewToken(token: string): RelayTokenPreview {
+    const r = decodeRelayToken(String(token ?? ''));
+    if (!r.ok) throw new Error(r.error);
+    const m = r.config.master;
+    return {
+      url: r.config.url,
+      masterPreview: m.length > 18 ? `${m.slice(0, 14)}…${m.slice(-4)}` : m,
+      caFingerprint: r.config.ca ? relayCaFingerprint(r.config.ca) : null,
+      e2ee: r.config.e2ee !== false,
+      label: r.config.label ?? '',
+    };
+  }
+
+  /** 混合口令应用：CA 落盘 userData/certs → 全字段 applySettings（持久化+插件即起）。 */
+  async applyToken(token: string): Promise<RelaySettingsDto> {
+    const r = decodeRelayToken(String(token ?? ''));
+    if (!r.ok) throw new Error(r.error);
+    let caPath = '';
+    if (r.config.ca) {
+      await fs.promises.mkdir(this.deps.certsDir, { recursive: true });
+      caPath = path.join(this.deps.certsDir, 'relay-ca.pem');
+      await fs.promises.writeFile(caPath, r.config.ca + '\n', { mode: 0o600 });
+    }
+    return this.applySettings({
+      enabled: true,
+      url: r.config.url,
+      masterCode: r.config.master,
+      e2ee: r.config.e2ee !== false,
+      caPath,
+    });
+  }
+
   // ---------- IPC ----------
 
   private broadcast(e: RelayStatusEvent): void {
@@ -228,6 +267,8 @@ export class RelayController {
       this.renewSubCode(id, opts)
     );
     ipcMain.handle(IPC.RELAY_FORCE_REGISTER, () => this.forceRegister());
+    ipcMain.handle(IPC.RELAY_PREVIEW_TOKEN, (_e, token: string) => this.previewToken(token));
+    ipcMain.handle(IPC.RELAY_APPLY_TOKEN, (_e, token: string) => this.applyToken(token));
   }
 
   unregisterIpc(): void {
@@ -239,6 +280,8 @@ export class RelayController {
       IPC.RELAY_REVOKE_SUBCODE,
       IPC.RELAY_RENEW_SUBCODE,
       IPC.RELAY_FORCE_REGISTER,
+      IPC.RELAY_PREVIEW_TOKEN,
+      IPC.RELAY_APPLY_TOKEN,
     ]) {
       ipcMain.removeAllListeners(ch);
     }

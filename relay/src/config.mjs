@@ -18,6 +18,10 @@ export const DEFAULT_CONFIG = {
   tls: null,
   /** 仅 true 时采信 X-Forwarded-For（方案书 §3.7）。 */
   trustedProxy: false,
+  /** 对外接入地址（混合口令用，如 https://1.2.3.4 —— Caddy 前置的公网 IP/域名）。 */
+  publicUrl: '',
+  /** 接入 CA 公钥 PEM（混合口令嵌入；自建部署=Caddy 内部 CA 的 root.crt 内容）。 */
+  publicCaPem: '',
   webRoot: '',
   limits: {
     subcodeTtlHours: 6,         // 签发默认 TTL（§3.5；管理页/客户端不传时生效）

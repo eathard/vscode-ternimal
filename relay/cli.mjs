@@ -20,7 +20,7 @@ function parseArgs(argv) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--config' || a === '--host' || a === '--port' || a === '--webroot' || a === '--days' || a === '--label') {
+    if (a === '--config' || a === '--host' || a === '--port' || a === '--webroot' || a === '--days' || a === '--label' || a === '--url' || a === '--ca-file') {
       out[a.slice(2)] = argv[++i];
     } else if (a === '--insecure') {
       out.insecure = true;
@@ -120,6 +120,38 @@ if (cmd === 'set-admin') {
   saveConfig(configFile, cfg2);
   console.log(`管理密码已设置（scrypt 哈希写入 ${configFile}）`);
   console.log('管理页地址：https://<relay>/admin （重启 relay 后生效）');
+  process.exit(0);
+}
+
+if (cmd === 'bind-access') {
+  const file = args.config ?? path.resolve('relay/relay-config.json');
+  const cfg = loadConfig(file);
+  if (args.url) {
+    const u = String(args.url).trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(u)) die('--url must be http(s)://…');
+    cfg.publicUrl = u;
+  }
+  if (args['ca-file']) {
+    const pem = fs.readFileSync(args['ca-file'], 'utf8').trim();
+    if (!pem.startsWith('-----BEGIN CERTIFICATE-----')) die('ca file is not a PEM certificate');
+    try { new crypto.X509Certificate(pem); } catch (e) { die(`invalid certificate: ${e.message}`); }
+    cfg.publicCaPem = pem;
+  }
+  if (!cfg.publicUrl) die('publicUrl not set — pass --url https://<ip-or-domain>');
+  saveConfig(file, cfg);
+  console.log(`[relay-cli] access bound: url=${cfg.publicUrl} ca=${cfg.publicCaPem ? 'yes' : 'none'}`);
+  process.exit(0);
+}
+
+if (cmd === 'conf-token') {
+  const file = args.config ?? path.resolve('relay/relay-config.json');
+  const cfg = loadConfig(file);
+  const code = args._[1];
+  if (!code || !code.startsWith('trelay_v1_')) die('usage: conf-token <主码明文 trelay_v1_…>');
+  if (!cfg.publicUrl) die('publicUrl not bound — run bind-access first');
+  const { encodeAccessToken } = await import('./src/token.mjs');
+  const token = encodeAccessToken({ url: cfg.publicUrl, master: code, caPem: cfg.publicCaPem, label: args.label });
+  console.log(token);
   process.exit(0);
 }
 

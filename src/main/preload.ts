@@ -1,5 +1,5 @@
 const { contextBridge, ipcRenderer, clipboard } = require('electron');
-import { IPC } from '../shared/ipcChannels';
+import { IPC, type RelaySettingsDto } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel: string, ...args: unknown[]) => {
@@ -78,6 +78,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   relayForceRegister: () => {
     return ipcRenderer.invoke(IPC.RELAY_FORCE_REGISTER) as Promise<void>;
+  },
+  relayPreviewToken: (token: string) => {
+    return ipcRenderer.invoke(IPC.RELAY_PREVIEW_TOKEN, token) as Promise<import('../shared/ipcChannels').RelayTokenPreview>;
+  },
+  relayApplyToken: (token: string) => {
+    return ipcRenderer.invoke(IPC.RELAY_APPLY_TOKEN, token) as Promise<RelaySettingsDto>;
   },
   relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => {
     return ipcRenderer.invoke(IPC.RELAY_RENEW_SUBCODE, id, opts);

@@ -16,6 +16,8 @@
   "tls": null,
 
   "_doc_proxy": "仅当位于可信反代之后才设 true（采信 X-Forwarded-For 做限速计账；直连暴露=false 防伪造）",
+  "publicUrl": "",
+  "publicCaPem": "",
   "trustedProxy": false,
 
   "_doc_webroot": "托管 web 客户端静态资源目录（dist/web）；空串=不托管",

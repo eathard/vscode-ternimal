@@ -27,6 +27,7 @@ import { ADMIN_PAGE_HTML, ADMIN_JS } from './adminPage.mjs';
 import { RateLimiter } from './ratelimit.mjs';
 import { loadConfig, saveConfig } from './config.mjs';
 import { MemoryStore } from './store.mjs';
+import { encodeAccessToken, caFingerprint } from './token.mjs';
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -62,6 +63,8 @@ export class RelayServer {
     this.configFile = opts.configFile ?? null;
     this.tls = cfg.tls ?? null;
     this.trustedProxy = cfg.trustedProxy ?? false;
+    this.publicUrl = String(cfg.publicUrl ?? '');
+    this.publicCaPem = String(cfg.publicCaPem ?? '');
     this.host = opts.host ?? cfg.host ?? '127.0.0.1';
     this.port = opts.port ?? cfg.port ?? 0;
     this.webRoot = opts.webRoot ?? cfg.webRoot ?? '';
@@ -183,6 +186,15 @@ export class RelayServer {
   }
 
   /** 主码生命周期写盘（管理 API 变更后调用；无 configFile 则内存态）。 */
+  /** 接入配置（对外地址+CA 公钥）持久化——混合口令的数据源。 */
+  persistAccess() {
+    if (!this.configFile) return;
+    const cfg = loadConfig(this.configFile);
+    cfg.publicUrl = this.publicUrl;
+    cfg.publicCaPem = this.publicCaPem;
+    saveConfig(this.configFile, cfg);
+  }
+
   persistMasters() {
     if (!this.configFile) return;
     const cfg = loadConfig(this.configFile);
@@ -640,6 +652,11 @@ export class RelayServer {
     const now = Date.now();
     return {
       service: 'trelay', uptimeMs: Date.now() - this.startedAt, channels: chans, pipes,
+      access: {
+        publicUrl: this.publicUrl,
+        caBound: !!this.publicCaPem,
+        caFingerprint: this.publicCaPem ? caFingerprint(this.publicCaPem) : null,
+      },
       maxPipes: this.maxPipesPerChannel * Math.max(1, this.store.channels.size),
       adminConfigured: !!this.adminHash,
       masters: this.masters.map((m) => ({
@@ -736,8 +753,14 @@ export class RelayServer {
       this.masters.push(entry);
       this.persistMasters();
       this.info(`master issued (${entry.label}, ${days > 0 ? days + 'd' : 'permanent'}) id=${entry.hash.slice(0, 8)}`);
-      // 明文仅此一次返回（与 CLI add-master 同语义）
-      return send(201, { code, id: entry.hash.slice(0, 8), label: entry.label, expiresAt: entry.expiresAt });
+      // 明文仅此一次返回（与 CLI add-master 同语义）；已绑定对外地址则同时附混合口令
+      const extra = {};
+      if (this.publicUrl) {
+        try {
+          extra.token = encodeAccessToken({ url: this.publicUrl, master: code, caPem: this.publicCaPem, label: entry.label });
+        } catch { /* 口令失败不阻断签发 */ }
+      }
+      return send(201, { code, id: entry.hash.slice(0, 8), label: entry.label, expiresAt: entry.expiresAt, ...extra });
     }
     {
       const mm = p.match(/^\/api\/admin\/masters\/([0-9a-f]{8})\/renew$/);
@@ -767,6 +790,54 @@ export class RelayServer {
         this.info(`master revoked id=${md[1]}`);
         return send(200, { ok: true, id: md[1] });
       }
+    }
+
+    // ---------- 混合接入口令（tconf_v1：IP+主码+CA 一贴即配） ----------
+    if (p === '/api/admin/access' && req.method === 'GET') {
+      if (!this.adminOk(req)) return send(401, { error: 'unauthorized' });
+      return send(200, {
+        publicUrl: this.publicUrl,
+        caBound: !!this.publicCaPem,
+        caFingerprint: this.publicCaPem ? caFingerprint(this.publicCaPem) : null,
+      });
+    }
+    if (p === '/api/admin/access' && req.method === 'PUT') {
+      if (!this.adminOk(req)) return send(401, { error: 'unauthorized' });
+      const body = await readJson(req);
+      if (!body || typeof body !== 'object') return send(400, { error: 'bad body' });
+      if (body.publicUrl !== undefined) {
+        const u = String(body.publicUrl ?? '').trim().replace(/\/+$/, '');
+        if (u && !/^https?:\/\/.+/.test(u)) return send(400, { error: 'publicUrl must be http(s)://…' });
+        this.publicUrl = u;
+      }
+      if (body.caPem !== undefined) {
+        const pem = String(body.caPem ?? '').trim();
+        if (pem && !pem.startsWith('-----BEGIN CERTIFICATE-----')) {
+          return send(400, { error: 'caPem must be a PEM certificate' });
+        }
+        if (pem && !caFingerprint(pem)) return send(400, { error: 'caPem is not a valid X.509 certificate' });
+        this.publicCaPem = pem;
+      }
+      this.persistAccess();
+      this.info(`access config updated (url=${this.publicUrl || '-'} ca=${this.publicCaPem ? 'bound' : 'none'})`);
+      return send(200, { publicUrl: this.publicUrl, caBound: !!this.publicCaPem, caFingerprint: this.publicCaPem ? caFingerprint(this.publicCaPem) : null });
+    }
+    if (p === '/api/admin/token' && req.method === 'POST') {
+      if (!this.adminOk(req)) return send(401, { error: 'unauthorized' });
+      const body = await readJson(req);
+      const code = String(body?.code ?? '').trim();
+      if (!code.startsWith('trelay_v1_')) return send(400, { error: 'code must be trelay_v1_…' });
+      if (!this.publicUrl) return send(400, { error: 'publicUrl not bound — PUT /api/admin/access first（或 CLI bind-access）' });
+      const entry = this.verifyMaster(code);
+      if (!entry) return send(404, { error: 'unknown master code' });
+      if (entry.revoked) return send(409, { error: 'master revoked' });
+      // 明文主码仅在内存中短暂存在（拼口令即弃，不落盘不进日志）
+      const token = encodeAccessToken({
+        url: this.publicUrl, master: code, caPem: this.publicCaPem,
+        label: String(body?.label ?? entry.label ?? '').slice(0, 64),
+      });
+      this.info(`access token issued for master id=${entry.hash.slice(0, 8)} (ca=${this.publicCaPem ? 'embedded' : 'none'})`);
+      return send(200, { token, url: this.publicUrl, caFingerprint: this.publicCaPem ? caFingerprint(this.publicCaPem) : null });
     }
 
     if (p === '/api/channels/subcodes' && req.method === 'POST') {
