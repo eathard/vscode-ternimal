@@ -109,21 +109,12 @@ export class XtermWrapper implements IXtermWrapper {
   }
 
   private enableWebgl(): void {
-    // 手机/触屏端强制 DOM 渲染器：WebGL 画布在移动端常见三类故障——
-    // 键盘弹出引发的 resize 重排竞态（画面撕裂/错位）、GPU 频繁回收 WebGL
-    // 上下文（闪烁/花屏）、高分屏 devicePixelRatio 缩放残影。DOM 渲染器在
-    // 这些场景像素级稳定，小屏幕性能完全够用（390px 视口实测内容完整）。
-    try {
-      const coarse =
-        typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-      const mobileUA = /Android|iPhone|iPad|Mobile|HarmonyOS/i.test(navigator.userAgent);
-      if (coarse || mobileUA) {
-        XtermWrapper.webglFailed = true; // 本会话后续终端也不再尝试 WebGL
-        return;
-      }
-    } catch {
-      /* 检测失败则维持原策略（尝试 WebGL） */
-    }
+    // 2026-09-11 复盘（docs/phone-display-issue.md）：曾在此对手机/触屏
+    // 一律禁用 WebGL 改走 DOM 渲染器——实测这是误伤。真正的移动端乱码
+    // 根因是共享会话几何（跟随模式已修），而 WebGL 的画布字形光栅化能
+    // 保留彩色 emoji 字形（claude 的黄色 ✳），DOM 文本路径在手机字体栈
+    // 下会把 U+2733 解析成单色字形=「图标变灰白」回归。故恢复 v1.1 的
+    // 行为：所有端优先 WebGL，初始化失败仍走 webglFailed 静态降级。
     try {
       this.webglAddon = new WebglAddon();
       this.webglAddon.onContextLoss(() => {
