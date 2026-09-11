@@ -76,24 +76,29 @@ function dialControl() {
   let registered = false;
   control = ws;
 
-  // 心跳失活看门狗：服务端心跳 30s/次；超过 3 个周期无任何消息
-  // （中继重启/代理半开等未收到 close 的僵尸连接）→ 主动断开走重连。
-  let lastMsgAt = Date.now();
+  // 心跳失活看门狗：服务端以 ws 协议层 ping（30s/次）保活，不是 JSON 消息！
+  // 活性必须追踪协议层：ping/pong/message 任一到达即视为活着。
+  // 仅统计消息会把「空闲但健康」的连接在 100s 时误杀（每隔百秒假重连）。
+  // 超过 3 个周期无任何帧（中继冻结/代理半开，不会收到 close）→ 主动断开走重连。
+  let lastAliveAt = Date.now();
+  const touchAlive = () => { lastAliveAt = Date.now(); };
   const watchdog = setInterval(() => {
     if (state !== 'registered') return;
-    if (Date.now() - lastMsgAt > 100_000) {
+    if (Date.now() - lastAliveAt > 100_000) {
       try { ws.terminate(); } catch { /* 已死 */ }
     }
   }, 15_000);
   ws.on('close', () => clearInterval(watchdog));
+  ws.on('ping', touchAlive);
+  ws.on('pong', touchAlive);
 
   ws.on('open', () => {
-    lastMsgAt = Date.now();
+    touchAlive();
     ws.send(JSON.stringify({ v: 1, type: 'register', masterCode: cfg.masterCode }));
   });
 
   ws.on('message', (raw) => {
-    lastMsgAt = Date.now();
+    touchAlive();
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
     if (m.type === 'registered') {
