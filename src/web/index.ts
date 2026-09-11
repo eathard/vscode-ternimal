@@ -138,3 +138,23 @@ function mountAdaptChip(app: TerminalApp, locale: ReturnType<typeof detectLocale
   setTimeout(refresh, 400);
   setInterval(refresh, 1500);
 }
+
+/**
+ * 渲染诊断角标（临时排查用）：左下角微型文字 WGL/DOM + 构建号。
+ * 手机端刷新后若看不到角标=页面还是旧缓存；DOM=WebGL 初始化失败走了降级。
+ */
+const WEB_BUILD = 'r525-wgl';
+function mountDiagBadge(): void {
+  const badge = document.createElement('div');
+  badge.className = 'web-diag-badge';
+  badge.style.display = 'none';
+  document.body.appendChild(badge);
+  const refresh = (): void => {
+    const webgl = !!document.querySelector('.xterm canvas');
+    badge.style.display = '';
+    badge.textContent = `${webgl ? 'WGL' : 'DOM'}·${WEB_BUILD}`;
+  };
+  setTimeout(refresh, 2500);
+  setInterval(refresh, 4000);
+}
+mountDiagBadge();

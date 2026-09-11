@@ -119,3 +119,17 @@ WebGL。验证：390px 手机仿真 + 5 轮键盘开合风暴中输出内容完�
 初始化失败仍走 webglFailed 静态降级）。复验：v1.2@手机UA 与 v1.1 渲染
 **逐像素一致**（yellow:121/gray:1583 完全相同）；verify 伞 11 套件绿；
 跟随模式/适配 chip 不受影响。
+
+## 五、附记：「claude 图标黑白」排查全记录（非 Ternimal 回归）
+
+现象：系统终端里 claude 橘黄 logo，Ternimal 里黑白。逐层排除：渲染器
+（五路径像素级一致）→ 终端能力查询（DA1/DA2/OSC10/11 全部正常响应）→
+**真凶：启动 App 的环境带 `NO_COLOR=1`**（调试 shell 泄漏），claude 遵循
+no-color.org 规范整体褪色；而用户从桌面图标启动的 App/系统终端无此变量。
+
+修复（本仓库）：`ptyManager` spawn 时剔除 NO_COLOR/CLICOLOR/FORCE_COLOR/
+CLICOLOR_FORCE——终端标签是全新交互 TTY，GUI 继承链上的颜色偏好属意外
+泄漏。验证：NO_COLOR=1 污染启动下 claude 仍全彩（彩色像素 6219）。
+
+教训：跨终端对比 CLI 行为时，先 diff 两边的 `env`；像素取证前先确认
+进程环境一致。

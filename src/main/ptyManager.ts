@@ -29,6 +29,15 @@ export class PtyManager extends EventEmitter {
         COLORTERM: 'truecolor',
       } as Record<string, string>,
     };
+    // Interactive tabs present a fresh TTY: color-preference flags inherited
+    // from the GUI launch environment (e.g. an agent harness exporting
+    // NO_COLOR=1) are accidental leakage and would silently monochrome every
+    // CLI in the terminal (claude, git, ls). Strip them — every tab starts
+    // with a neutral color environment. (Verified: claude logo went orange
+    // the moment NO_COLOR stopped leaking in.)
+    for (const k of ['NO_COLOR', 'CLICOLOR', 'FORCE_COLOR', 'CLICOLOR_FORCE']) {
+      delete (options.env as Record<string, string | undefined>)[k];
+    }
 
     const ptyProcess = pty.spawn(shell, [], options);
     this.instances.set(id, ptyProcess);
