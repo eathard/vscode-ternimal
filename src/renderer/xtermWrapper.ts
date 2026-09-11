@@ -109,6 +109,21 @@ export class XtermWrapper implements IXtermWrapper {
   }
 
   private enableWebgl(): void {
+    // 手机/触屏端强制 DOM 渲染器：WebGL 画布在移动端常见三类故障——
+    // 键盘弹出引发的 resize 重排竞态（画面撕裂/错位）、GPU 频繁回收 WebGL
+    // 上下文（闪烁/花屏）、高分屏 devicePixelRatio 缩放残影。DOM 渲染器在
+    // 这些场景像素级稳定，小屏幕性能完全够用（390px 视口实测内容完整）。
+    try {
+      const coarse =
+        typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+      const mobileUA = /Android|iPhone|iPad|Mobile|HarmonyOS/i.test(navigator.userAgent);
+      if (coarse || mobileUA) {
+        XtermWrapper.webglFailed = true; // 本会话后续终端也不再尝试 WebGL
+        return;
+      }
+    } catch {
+      /* 检测失败则维持原策略（尝试 WebGL） */
+    }
     try {
       this.webglAddon = new WebglAddon();
       this.webglAddon.onContextLoss(() => {
