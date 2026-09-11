@@ -25,10 +25,18 @@ export class TerminalTab {
   /** Switch geometry ownership; taking ownership immediately syncs our size. */
   setGeometryOwner(owner: boolean): void {
     this.geometryOwner = owner;
-    if (owner && this.alive) {
-      const dims = this.wrapper.getDimensions();
-      getTransport().resize(this.id, dims.cols, dims.rows);
+    if (owner) {
+      this.wrapper.clearFixedGeometry();
+      if (this.alive) {
+        const dims = this.wrapper.getDimensions();
+        getTransport().resize(this.id, dims.cols, dims.rows);
+      }
     }
+  }
+
+  /** Follow-mode rendering geometry = the session's own PTY size. */
+  applyFollowGeometry(cols: number, rows: number): void {
+    if (!this.geometryOwner) this.wrapper.setFixedGeometry(cols, rows);
   }
   private unsubs: (() => void)[] = [];
 
@@ -40,10 +48,14 @@ export class TerminalTab {
   constructor(
     info: SessionInfo,
     parentContainer: HTMLElement,
-    theme?: Record<string, string>
+    theme?: Record<string, string>,
+    opts?: { follower?: boolean }
   ) {
     this.id = info.id;
     this.title = info.title || 'Terminal';
+    // Follower flag must be set BEFORE attachToDom: the initial fit inside
+    // attach fires onResize synchronously — a follower must never send it.
+    this.geometryOwner = !opts?.follower;
 
     // Create wrapper
     this.wrapper = new XtermWrapper({ theme });

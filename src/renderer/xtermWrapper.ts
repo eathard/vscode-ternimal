@@ -148,11 +148,63 @@ export class XtermWrapper implements IXtermWrapper {
   }
 
   private refit(): void {
+    if (this.fixedGeometry) {
+      this.applyFollowScale();
+      return;
+    }
     try {
       this.fitAddon.fit();
     } catch {
       // Terminal not ready yet
     }
+  }
+
+  // ---- 观看端跟随几何（docs/phone-display-issue.md）----
+  // TUI（vim/claude/htop）按 PTY 列宽做绝对光标定位：观看端若按自己的窄屏
+  // 折行渲染，光标序列会落在错误位置=花屏。跟随模式因此固定使用会话自身
+  // 的 cols/rows 渲染，仅对画面整体 transform:scale 适配屏幕——旋转/键盘
+  // 弹出都只是重新算缩放系数，PTY 与 xterm 几何均不动。
+  private fixedGeometry = false;
+
+  /** 固定为会话几何（跟随模式）。 */
+  setFixedGeometry(cols: number, rows: number): void {
+    this.fixedGeometry = true;
+    try {
+      if (this.terminal.cols !== cols || this.terminal.rows !== rows) {
+        this.terminal.resize(cols, rows);
+      }
+      this.applyFollowScale();
+    } catch {
+      /* terminal not ready yet */
+    }
+  }
+
+  /** 解除固定（接管几何）：恢复 fit 行为。 */
+  clearFixedGeometry(): void {
+    this.fixedGeometry = false;
+    const el = this.terminal.element;
+    if (el) {
+      el.style.transform = '';
+      el.style.transformOrigin = '';
+      el.style.width = '';
+    }
+    this.refit();
+  }
+
+  private applyFollowScale(): void {
+    const el = this.terminal.element;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    // 根元素宽度跟随容器（100%），真实自然尺寸在 .xterm-screen（cols×行高）。
+    // 先把根宽固定为自然宽，再整体缩放——否则缩的是容器宽而非内容宽。
+    const screen = el.querySelector<HTMLElement>('.xterm-screen');
+    const natW = screen?.offsetWidth || el.offsetWidth || 1;
+    const natH = screen?.offsetHeight || el.offsetHeight || 1;
+    const k = Math.min(parent.clientWidth / natW, parent.clientHeight / natH);
+    const scale = Math.max(0.15, Math.min(1, k));
+    el.style.width = scale < 1 ? `${natW}px` : '';
+    el.style.transformOrigin = '0 0';
+    el.style.transform = scale < 1 ? `scale(${scale})` : '';
   }
 
   write(data: string): void {

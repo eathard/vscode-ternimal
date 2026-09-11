@@ -50,6 +50,14 @@ await sleep(1800);
 console.log('F B1 chip(跟随):', await chip(), '| stty:', await stty());
 for (let i = 0; i < 5; i++) { await VP(844, 390); await sleep(700); await VP(390, 844); await sleep(700); }
 console.log('F B2 跟随旋转5次 stty(应不变):', await stty());
+// B3 TUI 安全证明：100 连 X 应只占 1 个视觉行（xterm 几何=会话几何，不折行）
+mark++;
+await page.evaluate(FOCUS);
+await page.keyboard.type(`echo N${mark}; printf 'X%.0s' $(seq 1 100); echo\r`);
+await sleep(1300);
+const rowsTxt = await page.evaluate("Array.from(document.querySelectorAll('.xterm-rows')).map(r=>r.textContent)");
+const xRows = rowsTxt.filter((r) => r.includes('XXXX'));
+console.log('F B3 100连X占用行数(应为1):', xRows.length, '| transform缩放:', await page.evaluate(String.raw`(document.querySelector('.terminal-instance[style*="block"] .terminal')||{style:{}}).style.transform || '(none)'`));
 
 // C. 接管：点 chip → 旋转应变
 await page.evaluate("document.querySelector('.web-adapt-chip')?.click()");

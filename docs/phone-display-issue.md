@@ -86,3 +86,22 @@ WebGL。验证：390px 手机仿真 + 5 轮键盘开合风暴中输出内容完�
   - [x] 跟随会话旋转×5 stty 不变
   - [x] chip 接管后旋转变；还回后旋转不变
   - [x] verify 伞 + smoke-e2e 全绿；桌面（Electron）路径零改动
+
+### 修正记录：跟随渲染从「本机折行」改为「固定会话几何+整体缩放」
+
+首版跟随模式让观看端按自己窄屏折行渲染——对纯流式内容（echo/编译日志）
+没问题，但 TUI（claude/vim/htop）按 PTY 列宽做**绝对光标定位**，44 列视
+图渲染 111 列流时光标序列落错位置 = 花屏。修正：
+
+- `xtermWrapper.setFixedGeometry(cols, rows)`：跟随端 xterm 固定使用会话
+  自身几何渲染（`Terminal.resize` 到 SessionInfo 的 cols/rows），永不折行；
+- `applyFollowScale()`：量 `.xterm-screen` 自然宽，根元素显式设宽后整体
+  `transform: scale(k)` 适配容器（k=min(宽比, 高比)，下限 0.15）；旋转/
+  键盘弹出只重算 k；
+- `reconcileTabs` 对跟随标签同步会话几何（宿主 resize 后观看端跟随更新）；
+- `TerminalTab` 构造参数 `follower`——在 attachToDom 的首次 fit 之前就位，
+  杜绝跟随端 attach 瞬间向 PTY 发一次 resize 的「闪踢」。
+
+复验：B3 断言「100 连 X 只占 1 视觉行」（xterm 几何=会话几何的数学证明）
++ transform=scale(0.418)=390/933（111 列）恰为理论值；A/B/C/D 四段 3 轮
+稳定；verify 伞 11 套件 + smoke-e2e 全绿。

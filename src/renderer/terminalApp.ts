@@ -188,7 +188,8 @@ export class TerminalApp {
     }
 
     const theme = this.themeManager.getCurrentTheme();
-    const tab = new TerminalTab(info, this.terminalContainer, theme);
+    const follower = !this.effectiveOwner(info.id);
+    const tab = new TerminalTab(info, this.terminalContainer, theme, { follower });
     tab.onExit = (t) => {
       if (this.tabs.size > 1) {
         this.closeTab(t.id);
@@ -204,7 +205,7 @@ export class TerminalApp {
     // Geometry ownership (phone follow-mode, docs/phone-display-issue.md):
     // creator keeps it; attached tabs follow unless the user opts in per-tab.
     if (opts.createdHere) this.createdHere.add(info.id);
-    tab.setGeometryOwner(this.effectiveOwner(info.id));
+    if (follower) tab.applyFollowGeometry(info.cols, info.rows);
 
     // M4 TC-M4-03: a tab born from server truth (reopen/reconcile) restores
     // its scrollback from the server-side ring buffer when the transport
@@ -243,6 +244,12 @@ export class TerminalApp {
     // Adopt sessions not yet known locally (created remotely in M2).
     for (const info of tabs) {
       this.addTabFromInfo(info, { activate: false });
+    }
+
+    // Follow-mode tabs track the session's live geometry (owner resized).
+    for (const info of tabs) {
+      const tab = this.tabs.get(info.id);
+      if (tab && !tab.geometryOwner) tab.applyFollowGeometry(info.cols, info.rows);
     }
   }
 
