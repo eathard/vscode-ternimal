@@ -256,22 +256,65 @@ export class RelayServer {
       const channelId = deriveChannelId(msg.masterCode);
       const ch = this.store.getOrCreateChannel(channelId);
       ch.masterEntry = entry; // 计费生命周期挂接（sweep 到期自停的依据）
-      if (ch.control && ch.control.ws.readyState === OPEN) {
-        // 接管：旧控制连接断开、旧管道与挂起全部收割（方案书 §3.4；子码保留）
-        this.errorThenClose(ch.control.ws, CLOSE.TAKEOVER, 'superseded');
-        this.reapChannel(ch, 'takeover');
-      }
-      ch.control = { ws, alive: true };
-      ws.on('pong', () => { if (ch.control?.ws === ws) ch.control.alive = true; });
-      ws.on('message', () => this.errorThenClose(ws, CLOSE.BAD_MESSAGE, 'unexpected message on control'));
-      ws.on('close', () => {
-        if (ch.control?.ws === ws) {
-          ch.control = null;
-          this.reapChannel(ch, 'control closed');
+      const acceptRegister = () => {
+        if (ch.control && ch.control.ws.readyState === OPEN) {
+          // 接管：旧控制连接断开、旧管道与挂起全部收割（方案书 §3.4；子码保留）
+          this.errorThenClose(ch.control.ws, CLOSE.TAKEOVER, 'superseded');
+          this.reapChannel(ch, 'takeover');
         }
-      });
-      try { ws.send(JSON.stringify({ type: CTRL.REGISTERED, channelId })); } catch { /* gone */ }
-      this.info(`channel ${channelId.slice(0, 8)}… registered (${ip})`);
+        ch.control = { ws, alive: true };
+        ws.on('pong', () => { if (ch.control?.ws === ws) ch.control.alive = true; });
+        ws.on('message', () => this.errorThenClose(ws, CLOSE.BAD_MESSAGE, 'unexpected message on control'));
+        ws.on('close', () => {
+          if (ch.control?.ws === ws) {
+            ch.control = null;
+            this.reapChannel(ch, 'control closed');
+          }
+        });
+        try { ws.send(JSON.stringify({ type: CTRL.REGISTERED, channelId })); } catch { /* gone */ }
+        this.info(`channel ${channelId.slice(0, 8)}… registered (${ip})`);
+      };
+      const prev = ch.control;
+      if (prev && prev.ws.readyState === OPEN) {
+        const legacy = !(msg.proto === 2 || msg.force === true);
+        if (legacy) {
+          // 旧客户端（升级过渡期）：维持 last-wins，保证滚动升级不断服
+          acceptRegister();
+        } else if (msg.force === true) {
+          // 强制接管（人工意图）：先告知旧端「被接管 → 驻停」再收割。战争结构性不可能：
+          // 踢人必须有人在面板点击，被踢方收到 taken-over 后不再自动重连。
+          try { prev.ws.send(JSON.stringify({ type: CTRL.TAKEN_OVER })); } catch { /* gone */ }
+          acceptRegister();
+          this.info(`channel ${channelId.slice(0, 8)}… force takeover (${ip})`);
+        } else {
+          // 新客户端非 force：活性探测。旧连接 2.5s 内回 pong = 真活着 → 占用；
+          // 不回（僵尸/半开，即正常换机场景）→ 自动接管，用户零感知。
+          prev.alive = false;
+          try { prev.ws.ping(); } catch { /* gone */ }
+          setTimeout(() => {
+            if (ws.readyState !== OPEN) return;
+            if (ch.control !== prev) {
+              if (!ch.control) { acceptRegister(); return; } // 探测期间旧连接自然死亡
+              try { ws.send(JSON.stringify({ type: CTRL.OCCUPIED })); } catch { /* gone */ }
+              this.errorThenClose(ws, CLOSE.OCCUPIED, 'master in use');
+              return; // 探测期间第三方注册成功 → 占用语义不变
+            }
+            if (prev.alive) {
+              try { ws.send(JSON.stringify({ type: CTRL.OCCUPIED })); } catch { /* gone */ }
+              this.errorThenClose(ws, CLOSE.OCCUPIED, 'master in use');
+              this.info(`channel ${channelId.slice(0, 8)}… register rejected: occupied (${ip})`);
+            } else {
+              // 僵尸接管：与旧版 last-wins 同路径
+              this.errorThenClose(prev.ws, CLOSE.TAKEOVER, 'superseded');
+              this.reapChannel(ch, 'takeover');
+              acceptRegister();
+              this.info(`channel ${channelId.slice(0, 8)}… zombie takeover (${ip})`);
+            }
+          }, 2500);
+        }
+        return;
+      }
+      acceptRegister();
     });
   }
 

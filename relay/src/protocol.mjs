@@ -20,6 +20,8 @@ export const CTRL = {
   REGISTERED: 'registered',
   CLIENT_OFFER: 'client-offer',
   ERROR: 'error',
+  OCCUPIED: 'occupied',   // 注册被拒：主码已有活跃实例（新版非 force 注册撞上活连接）
+  TAKEN_OVER: 'taken-over', // 被强制接管：收到方应驻停，不再自动重连
 };
 
 /** 客户端 → relay（/join 首帧）。 */
@@ -37,6 +39,7 @@ export const CLOSE = {
   SUBCODE_EXPIRED: 4008,
   SUBCODE_REVOKED: 4009,
   TAKEOVER: 4010,
+  OCCUPIED: 4011,
   BACKPRESSURE: 4011,
   FIRST_FRAME_TIMEOUT: 4012,
 };
@@ -80,7 +83,14 @@ export function parseControlFirst(raw) {
   try { m = JSON.parse(raw); } catch { return null; }
   if (typeof m !== 'object' || m === null) return null;
   if (m.type === CTRL.REGISTER && typeof m.masterCode === 'string') {
-    return { type: CTRL.REGISTER, masterCode: m.masterCode };
+    // proto:2 = 意图抢占协议（occupied/taken-over 语义）；force = 人工强制接管。
+    // 缺省 = 旧客户端 → 服务端按 last-wins 兼容（滚动升级不断服）。
+    return {
+      type: CTRL.REGISTER,
+      masterCode: m.masterCode,
+      proto: m.proto === 2 ? 2 : undefined,
+      force: m.force === true ? true : undefined,
+    };
   }
   if (m.type === CTRL.PIPE && typeof m.masterCode === 'string' && typeof m.clientId === 'string') {
     return { type: CTRL.PIPE, masterCode: m.masterCode, clientId: m.clientId };

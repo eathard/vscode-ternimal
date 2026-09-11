@@ -69,7 +69,7 @@ function sha256ColonHex(der) {
 
 // ---------- 控制通道 ----------
 
-function dialControl() {
+function dialControl(opts = {}) {
   if (!cfg) return;
   const url = `${wsBase(cfg.relayUrl)}/control`;
   const ws = new WebSocket(url);
@@ -94,7 +94,9 @@ function dialControl() {
 
   ws.on('open', () => {
     touchAlive();
-    ws.send(JSON.stringify({ v: 1, type: 'register', masterCode: cfg.masterCode }));
+    const reg = { v: 1, proto: 2, type: 'register', masterCode: cfg.masterCode };
+    if (opts.force) reg.force = true; // 强制接管/夺回：面板人工点击才会传
+    ws.send(JSON.stringify(reg));
   });
 
   ws.on('message', (raw) => {
@@ -108,6 +110,14 @@ function dialControl() {
       setState('registered', `channel ${m.channelId}`);
     } else if (m.type === 'client-offer') {
       dialPipe(m.clientId);
+    } else if (m.type === 'occupied') {
+      // 主码已有活跃实例（服务器 ping 探测确认活着）。不做战争式重连：
+      // 驻留等待，每 30s 静默探测一次（持有方退出后自动接管，零人工）。
+      setState('occupied', 'master in use elsewhere');
+    } else if (m.type === 'taken-over') {
+      // 被人工强制接管：驻停，停止一切自动重连——战争结构性终止。
+      // 面板显示「已被接管」，是否夺回由人决定（force-register）。
+      setState('parked', 'taken over by another device');
     } else if (m.type === 'error') {
       parent.post({ type: 'relay-error', code: m.code, message: m.message });
     }
@@ -116,7 +126,9 @@ function dialControl() {
   ws.on('close', () => {
     if (control === ws) control = null;
     reapAllPipes();
-    if (state !== 'stopped') scheduleReconnect(registered ? 'reconnecting' : 'starting');
+    if (state === 'stopped' || state === 'parked') return; // 驻停：等人工夺回
+    if (state === 'occupied') { scheduleOccupiedProbe(); return; } // 占用：30s 静默探测
+    scheduleReconnect(registered ? 'reconnecting' : 'starting');
   });
   ws.on('error', () => { /* close 紧随其后，统一在 close 处理 */ });
 }
@@ -129,6 +141,22 @@ function scheduleReconnect(nextState) {
   backoffMs = Math.min(backoffMs * 2, 30_000);
   setState(nextState, `retry in ${Math.round(delay + jitter)}ms`);
   setTimeout(() => { if (state !== 'stopped') dialControl(); }, delay + jitter);
+}
+
+let occupiedProbeTimer = null;
+function scheduleOccupiedProbe() {
+  clearTimeout(occupiedProbeTimer);
+  setState('occupied', 'probe in 30s');
+  occupiedProbeTimer = setTimeout(() => {
+    if (state === 'occupied') dialControl(); // 非 force 探测：持有方已退则自动接管
+  }, 30_000);
+}
+
+/** 人工意图：强制接管（occupied 时）或夺回（parked 时）。面板按钮触发。 */
+function forceRegister() {
+  clearTimeout(occupiedProbeTimer);
+  setState('starting', 'force register');
+  dialControl({ force: true });
 }
 
 // ---------- 管道对接 ----------
@@ -302,6 +330,12 @@ async function handleCommand(msg) {
       const body = msg.permanent === true ? { permanent: true } : { days: msg.days };
       const r = await apiCall('POST', `/api/channels/subcodes/${encodeURIComponent(msg.subCodeId)}/renew`, body);
       return reply(r.ok ? { ok: true, expiresAt: r.expiresAt } : { ok: false, status: r.status });
+    }
+    if (msg.cmd === 'force-register') {
+      // 人工意图的强制接管/夺回：occupied（在别处使用）与 parked（被接管）均可触发
+      if (state === 'registered') return reply({ ok: true, state });
+      forceRegister();
+      return reply({ ok: true, state });
     }
     if (msg.cmd === 'ping') return reply({ ok: true, state, pipes: pipes.size });
     return reply({ ok: false, error: `unknown cmd ${msg.cmd}` });

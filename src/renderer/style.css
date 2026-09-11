@@ -370,3 +370,29 @@ html, body {
   border-color: #d7ba7d;
   color: #d7ba7d;
 }
+
+/* 同码冲突横幅：occupied/parked 状态显示，金色警示 + 人工意图按钮 */
+.rs-conflict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid #6b5a2e;
+  border-radius: 6px;
+  background: rgba(215, 186, 125, 0.08);
+}
+.rs-conflict-text {
+  flex: 1;
+  color: #d7ba7d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rs-conflict-btn {
+  flex-shrink: 0;
+  border-color: #d7ba7d;
+  color: #d7ba7d;
+}
+.rs-conflict-btn:hover {
+  background: rgba(215, 186, 125, 0.15);
+}

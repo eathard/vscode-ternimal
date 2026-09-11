@@ -29,11 +29,18 @@ export const IPC = {
   RELAY_LIST_SUBCODES: 'relay:listSubcodes',
   RELAY_REVOKE_SUBCODE: 'relay:revokeSubcode',
   RELAY_RENEW_SUBCODE: 'relay:renewSubcode',
+  RELAY_FORCE_REGISTER: 'relay:forceRegister',
 } as const;
 
 // ---------- Relay plugin (R-M2, relay-design §4) ----------
 
-export type RelayPluginState = 'stopped' | 'starting' | 'registered' | 'reconnecting';
+export type RelayPluginState =
+  | 'stopped'
+  | 'starting'
+  | 'registered'
+  | 'reconnecting'
+  | 'occupied' // 主码在另一台设备在线（非 force 注册被拒，30s 静默探测）
+  | 'parked'; // 被人工强制接管：驻停，不再自动重连，等待夺回
 
 /** Settings panel DTO (main → renderer); mirrors configStore.relay + live state. */
 export interface RelaySettingsDto {

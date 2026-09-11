@@ -200,6 +200,11 @@ export class RelayController {
     return this.host.renewSubCode(id, opts);
   }
 
+  /** 强制接管/夺回：把占用/驻停的主码通道以人工意图重新注册（踢掉对端）。 */
+  async forceRegister(): Promise<void> {
+    await this.host.forceRegister();
+  }
+
   // ---------- IPC ----------
 
   private broadcast(e: RelayStatusEvent): void {
@@ -222,6 +227,7 @@ export class RelayController {
     ipcMain.handle(IPC.RELAY_RENEW_SUBCODE, (_e, id: string, opts: { days?: number; permanent?: boolean }) =>
       this.renewSubCode(id, opts)
     );
+    ipcMain.handle(IPC.RELAY_FORCE_REGISTER, () => this.forceRegister());
   }
 
   unregisterIpc(): void {
@@ -232,6 +238,7 @@ export class RelayController {
       IPC.RELAY_LIST_SUBCODES,
       IPC.RELAY_REVOKE_SUBCODE,
       IPC.RELAY_RENEW_SUBCODE,
+      IPC.RELAY_FORCE_REGISTER,
     ]) {
       ipcMain.removeAllListeners(ch);
     }

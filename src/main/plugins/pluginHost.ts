@@ -219,6 +219,11 @@ export class RelayPluginHost extends (EventEmitter as new () => RelayPluginEvent
     await this.request({ cmd: 'revoke-subcode', subCodeId, purge: opts.purge === true });
   }
 
+  /** 人工意图的强制接管/夺回（occupied=在别处使用 / parked=被接管 状态时由面板触发）。 */
+  async forceRegister(): Promise<void> {
+    await this.request({ cmd: 'force-register' });
+  }
+
   /** 子码续期：days 天顺延；permanent=true 转长期。返回新 expiresAt（长期=null）。 */
   async renewSubCode(subCodeId: string, opts: { days?: number; permanent?: boolean }): Promise<number | null> {
     const r = (await this.request({

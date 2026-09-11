@@ -28,6 +28,21 @@ export function openRelaySettings(): void {
   unsubscribeStatus = window.electronAPI.onRelayStatus((e: RelayStatusEvent) => {
     const el = overlay?.querySelector<HTMLSpanElement>('.rs-status-value');
     if (el) el.textContent = t(locale, `settings.relay.state.${e.state}`);
+    const banner = overlay?.querySelector<HTMLDivElement>('.rs-conflict');
+    const text = overlay?.querySelector<HTMLDivElement>('.rs-conflict-text');
+    const btn = overlay?.querySelector<HTMLButtonElement>('.rs-conflict-btn');
+    if (banner && text && btn) {
+      const occupied = e.state === 'occupied';
+      const parked = e.state === 'parked';
+      banner.classList.toggle('rs-hidden', !occupied && !parked);
+      if (occupied) {
+        text.textContent = t(locale, 'settings.relay.occupiedHint');
+        btn.textContent = t(locale, 'settings.relay.forceTakeover');
+      } else if (parked) {
+        text.textContent = t(locale, 'settings.relay.parkedHint');
+        btn.textContent = t(locale, 'settings.relay.reclaim');
+      }
+    }
   });
   void refreshSubcodes();
 }
@@ -121,7 +136,36 @@ function buildPanel(): HTMLElement {
   statusRow.appendChild(statusValue);
   form.appendChild(statusRow);
 
+  // 同码冲突横幅：occupied（在别处使用）→ 强制接管；parked（被接管）→ 夺回。
+  // 战争结构性终止的 UI 面：只有人点按钮才会踢对端，被踢方驻停不再自动重连。
+  const conflictBanner = el('div', 'rs-conflict rs-hidden');
+  const conflictText = el('div', 'rs-conflict-text');
+  const conflictBtn = document.createElement('button');
+  conflictBtn.type = 'button';
+  conflictBtn.className = 'rs-btn rs-conflict-btn';
+  conflictBtn.addEventListener('click', () => {
+    void window.electronAPI
+      .relayForceRegister()
+      .catch((err: unknown) => setMsg(String(err), true));
+  });
+  conflictBanner.appendChild(conflictText);
+  conflictBanner.appendChild(conflictBtn);
+  form.appendChild(conflictBanner);
+
   panel.appendChild(form);
+
+  function renderConflict(state: string): void {
+    const occupied = state === 'occupied';
+    const parked = state === 'parked';
+    conflictBanner.classList.toggle('rs-hidden', !occupied && !parked);
+    if (occupied) {
+      conflictText.textContent = t(locale, 'settings.relay.occupiedHint');
+      conflictBtn.textContent = t(locale, 'settings.relay.forceTakeover');
+    } else if (parked) {
+      conflictText.textContent = t(locale, 'settings.relay.parkedHint');
+      conflictBtn.textContent = t(locale, 'settings.relay.reclaim');
+    }
+  }
 
   const msg = el('div', 'rs-msg rs-hidden');
   panel.appendChild(msg);
@@ -193,6 +237,7 @@ function buildPanel(): HTMLElement {
         });
         restartNote.classList.toggle('rs-hidden', !next.restartRequired);
         statusValue.textContent = t(locale, `settings.relay.state.${next.state}`);
+        renderConflict(next.state);
         void refreshSubcodes();
       } catch (err) {
         setMsg(
@@ -217,6 +262,7 @@ function buildPanel(): HTMLElement {
       e2ee.checked = !!s.e2ee;
       caInput.value = s.caPath ?? '';
       statusValue.textContent = t(locale, `settings.relay.state.${s.state}`);
+      renderConflict(s.state);
       restartNote.classList.toggle('rs-hidden', !s.restartRequired);
     } catch (err) {
       setMsg(String(err), true);

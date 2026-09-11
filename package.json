@@ -21,10 +21,11 @@
     "verify:m4": "node scripts/verify-reconnect.mjs",
     "verify:browser": "node scripts/verify-browser-e2e.mjs",
     "verify:softkeys": "node scripts/verify-softkeys.mjs",
-    "verify:relay": "node scripts/verify-relay.mjs && node scripts/verify-relay-e2e.mjs && node scripts/verify-relay-matrix.mjs && node scripts/verify-relay-admin.mjs",
+    "verify:relay": "node scripts/verify-relay.mjs && node scripts/verify-relay-e2e.mjs && node scripts/verify-relay-matrix.mjs && node scripts/verify-relay-admin.mjs && node scripts/verify-relay-takeover.mjs",
     "verify": "npm run verify:m1 && npm run verify:m3 && npm run verify:m4 && npm run verify:softkeys && npm run verify:relay",
     "verify:admin-browser": "node scripts/admin-browser-check.mjs",
-    "verify:instances": "node scripts/verify-multi-instance.mjs"
+    "verify:instances": "node scripts/verify-multi-instance.mjs",
+    "verify:relay-takeover": "node scripts/verify-relay-takeover.mjs"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",

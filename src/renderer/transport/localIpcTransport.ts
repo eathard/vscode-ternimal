@@ -36,6 +36,7 @@ declare global {
       relayListSubcodes: () => Promise<RelaySubcodeInfo[]>;
       relayRevokeSubcode: (id: string, purge?: boolean) => Promise<void>;
       relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => Promise<number | null>;
+      relayForceRegister: () => Promise<void>;
       onRelayStatus: (callback: (status: RelayStatusEvent) => void) => () => void;
     };
   }

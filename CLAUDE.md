@@ -73,6 +73,13 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - `relay/` is a standalone zero-knowledge relay server (Node, no build step; `relay/cli.mjs serve`). Its verification suites: `npm run verify:relay` (+ `verify:instances` for multi-instance). Runtime `relay/relay-config.json` is gitignored (contains credential hashes).
 - Multi-instance: `--ternimal-instance=<id>` (or `TERNIMAL_INSTANCE`) gives each instance its own userData under `instances/<id>/` (config seeded from default with relay DISABLED — same master code in two instances causes a takeover war), a claimed color (top bar + tray icon + window title), and automatic port fallback on EADDRINUSE. Default launch is untouched.
 
+## Same-Master Conflict: Intent Preemption (方案一)
+
+- One master code = one live device. New plugin (proto:2) registering against a LIVE holder gets `occupied` (UI shows 在别处使用中 + 强制接管); the holder stays untouched. A 30s silent probe auto-takes-over once the holder dies (machine migration = zero clicks).
+- `force: true` (only from a human clicking the panel button) kicks the holder: it receives `taken-over` and parks (已被接管, NO auto-reconnect, 夺回 button). War is structurally impossible: kicking requires a click, the kicked side stops retrying.
+- Legacy clients (no proto field) keep last-wins for rolling upgrades. Zombie holders are detected by a 2.5s ping-probe on register.
+- Verify: `npm run verify:relay-takeover` (B-08). NOTE: dist/plugins/relayPlugin.mjs is a minified transform of the source — grep for identifiers there will false-negative.
+
 ## Windows Packaging (on a real Windows box)
 
 - Build natively on Windows when possible: `npm ci --ignore-scripts --registry=https://registry.npmmirror.com` then `npm run build` then `npx electron-builder --win nsis --x64 -c.npmRebuild=false`
