@@ -45,13 +45,13 @@ export class MemoryStore {
   }
 
   /**
-   * 签发子码（方案书 §3.3/§3.5：TTL 默认 24h，范围 1h–7d）。
+   * 签发子码（方案书 §3.3/§3.5：TTL 默认 6h，范围 1h–7d）。
    * @param {string} channelId
    * @param {{ttlHours?: number, label?: string}} [opts]
    */
   issueSubCode(channelId, opts = {}) {
     const ch = this.getOrCreateChannel(channelId);
-    const ttl = Math.min(168, Math.max(1, opts.ttlHours ?? 24));
+    const ttl = Math.min(168, Math.max(1, opts.ttlHours ?? 6));
     const id = `sc${++subSeq}`;
     const rec = {
       id,
@@ -64,6 +64,34 @@ export class MemoryStore {
       stats: { bytes: 0, joins: 0 },
     };
     ch.subcodes.set(id, rec);
+    return rec;
+  }
+
+  /** 按 id 跨通道查子码（管理页续期用）。 @param {string} id */
+  findSubCodeById(id) {
+    for (const ch of this.channels.values()) {
+      const sc = ch.subcodes.get(id);
+      if (sc) return sc;
+    }
+    return null;
+  }
+
+  /**
+   * 子码续期（管理页 +1天/+7天/长期）。
+   * - {days: N}：从 max(now, 当前到期) 顺延 N 天；已过期的从当下复活。
+   * - {permanent: true}：置为长期（expiresAt = null，永不过期）。
+   * 已吊销不可续期（吊销即终态）。@param {{days?: number, permanent?: boolean}} [opts]
+   */
+  renewSubCode(id, opts = {}) {
+    const rec = this.findSubCodeById(id);
+    if (!rec || rec.revoked) return null;
+    if (opts.permanent) {
+      rec.expiresAt = null;
+      return rec;
+    }
+    const days = Math.min(365, Math.max(1, Number(opts.days) || 1));
+    const base = rec.expiresAt && rec.expiresAt > Date.now() ? rec.expiresAt : Date.now();
+    rec.expiresAt = base + days * 86_400_000;
     return rec;
   }
 

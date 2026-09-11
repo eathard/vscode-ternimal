@@ -32,7 +32,7 @@
 
   "_doc_limits": "运行限制（全部可选，以下为默认值）",
   "limits": {
-    "subcodeTtlHours": 24,
+    "subcodeTtlHours": 6,
     "maxPipesPerChannel": 4,
     "joinPendingMs": 10000,
     "firstFrameTimeoutMs": 10000,

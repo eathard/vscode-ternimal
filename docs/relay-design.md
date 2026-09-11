@@ -62,7 +62,7 @@
 | 凭证 | 谁签发 | 谁校验 | 生命周期 | 用途 |
 |------|--------|--------|----------|------|
 | **主码**（master code） | relay CLI 签发（§8-Q1；未来账户系统） | relay | 长期，可轮换 | host 登记通道 + 签发/吊销子码 |
-| **子码**（sub-code） | host 应用经管理 API 生成 | relay | 短期（默认 24h，可配置），可吊销 | 客户端接入通道（join） |
+| **子码**（sub-code） | host 应用经管理 API 生成 | relay | 短期（默认 6h，可配置；管理页可续期 +1天/+7天/转长期） | 客户端接入通道（join） |
 | **Ternimal Token** | host 每次启动随机生成（现有 `AuthManager`） | host（端到端，穿管道） | 每次启动轮换 | 会话准入（现有语义不变） |
 
 码格式：`trelay_v1_<base64url(24B)>`（带版本前缀，为未来账户体系预留可解析的
@@ -134,6 +134,11 @@ host → relay  WSS /pipe（每客户端一条新连接，全出站）:
 ```
 
 ### 3.3 子码管理 API（HTTPS，主码鉴权）
+
+> 默认 TTL = `limits.subcodeTtlHours`（6 小时）。管理页可为任一子码续期：
+> `POST /api/channels/subcodes/:id/renew`（管理会话或属主主码），`{days:N}` 自当前
+> 到期顺延（已过期则从当下复活）或 `{permanent:true}` 转长期（`expiresAt=null`，
+> join/pump 校验对 null 放行）。吊销为终态，不可续期。
 
 ```
 POST   /api/channels/subcodes      {ttlHours?, label?}   → {subCode, id, expiresAt}

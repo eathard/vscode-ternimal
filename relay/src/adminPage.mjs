@@ -102,6 +102,15 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
   }
   function fmtWhen(ts) { return ts ? new Date(ts).toLocaleString() : '—'; }
 
+  function fmtRem(ms) {
+    if (ms === null) return '长期';
+    if (ms <= 0) return '已过期';
+    var h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000), d = Math.floor(h / 24);
+    if (d >= 1) return d + '天' + (h % 24) + '时';
+    if (h >= 1) return h + '时' + m + '分';
+    return m + '分';
+  }
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -148,19 +157,25 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           '<span class="tag ' + (c.online ? 'ok' : 'off') + '">' + (c.online ? '插件在线' : '离线') + '</span>' +
           '<span class="muted">首见 ' + fmtWhen(c.firstSeen) + ' · 流量 ' + fmtBytes(c.bytesIn + c.bytesOut) +
           ' (↑' + fmtBytes(c.bytesOut) + ' ↓' + fmtBytes(c.bytesIn) + ') · 接入 ' + c.joins + '</span></div>';
-        h += '<table><tr><th>子码</th><th>标签</th><th>状态</th><th>到期</th><th>joins</th><th>bytes</th><th></th></tr>';
+        h += '<table><tr><th>子码</th><th>标签</th><th>状态</th><th>到期</th><th>剩余</th><th>joins</th><th>bytes</th><th></th></tr>';
         (c.subcodes || []).forEach(function (s) {
           var st = s.revoked ? '<span class="tag rev">已吊销</span>'
             : (s.expiresAt > Date.now() ? '<span class="tag ok">有效</span>' : '<span class="tag off">已过期</span>');
+          var rem = s.revoked ? '—' : fmtRem(s.expiresAt === null ? null : s.expiresAt - Date.now());
+          var due = s.expiresAt === null ? '长期' : fmtWhen(s.expiresAt);
+          var rn = s.revoked ? '' :
+            '<button data-sr1="' + esc(c.id) + '/' + esc(s.id) + '">+1天</button> ' +
+            '<button data-sr7="' + esc(c.id) + '/' + esc(s.id) + '">+7天</button> ' +
+            '<button data-sp="' + esc(c.id) + '/' + esc(s.id) + '">长期</button> ';
           h += '<tr><td><code>' + esc(String(s.code).slice(0, 14)) + '…</code></td><td>' + esc(s.label || '') +
-            '</td><td>' + st + '</td><td>' + fmtWhen(s.expiresAt) + '</td><td class="num">' + s.stats.joins +
+            '</td><td>' + st + '</td><td>' + due + '</td><td>' + rem + '</td><td class="num">' + s.stats.joins +
             '</td><td class="num">' + fmtBytes(s.stats.bytes) + '</td>' +
-            '<td>' + (s.revoked ? '' : '<button class="danger" data-rev="' + esc(c.id) + '/' + esc(s.id) + '">吊销</button>') + '</td></tr>';
+            '<td>' + rn + (s.revoked ? '' : '<button class="danger" data-rev="' + esc(c.id) + '/' + esc(s.id) + '">吊销</button>') + '</td></tr>';
         });
         h += '</table>';
         h += '<details><summary>为此通道签发子码</summary><div class="row">' +
           '<input id="lbl-' + esc(c.id) + '" placeholder="标签（如 customer-a）" style="width:200px">' +
-          '<select id="ttl-' + esc(c.id) + '"><option value="1">1 小时</option><option value="24" selected>24 小时</option><option value="168">7 天</option></select>' +
+          '<select id="ttl-' + esc(c.id) + '"><option value="1">1 小时</option><option value="6" selected>6 小时</option><option value="24">24 小时</option><option value="168">7 天</option></select>' +
           '<button data-issue="' + esc(c.id) + '">签发</button></div></details>';
         h += '</div>';
       });
@@ -245,6 +260,21 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           api('DELETE', '/api/admin/masters/' + b.getAttribute('data-mrev')).then(render);
         };
       });
+      Array.prototype.forEach.call(app.querySelectorAll('[data-sr1]'), function (b) {
+        var parts = b.getAttribute('data-sr1').split('/');
+        b.onclick = function () { api('POST', '/api/channels/subcodes/' + encodeURIComponent(parts[1]) + '/renew', { days: 1 }).then(render); };
+      });
+      Array.prototype.forEach.call(app.querySelectorAll('[data-sr7]'), function (b) {
+        var parts = b.getAttribute('data-sr7').split('/');
+        b.onclick = function () { api('POST', '/api/channels/subcodes/' + encodeURIComponent(parts[1]) + '/renew', { days: 7 }).then(render); };
+      });
+      Array.prototype.forEach.call(app.querySelectorAll('[data-sp]'), function (b) {
+        var parts = b.getAttribute('data-sp').split('/');
+        b.onclick = function () {
+          if (!confirm('设为长期可用？该子码将永不过期。')) return;
+          api('POST', '/api/channels/subcodes/' + encodeURIComponent(parts[1]) + '/renew', { permanent: true }).then(render);
+        };
+      });
       Array.prototype.forEach.call(app.querySelectorAll('[data-rev]'), function (b) {
         b.onclick = function () {
           var parts = b.getAttribute('data-rev').split('/');
@@ -259,7 +289,7 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           api('POST', '/api/channels/subcodes', {
             channelId: cid,
             label: (document.getElementById('lbl-' + cid) || {}).value || '',
-            ttlHours: Number((document.getElementById('ttl-' + cid) || {}).value || 24),
+            ttlHours: Number((document.getElementById('ttl-' + cid) || {}).value || 6),
           }).then(function (j) {
             if (j.subCode) alert('已签发：' + j.subCode + '\\n（复制保存，关闭后不再完整显示）');
             render();

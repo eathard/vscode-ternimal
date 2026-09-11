@@ -20,7 +20,7 @@ export const DEFAULT_CONFIG = {
   trustedProxy: false,
   webRoot: '',
   limits: {
-    subcodeTtlHours: 24,        // 签发默认 TTL（§3.5）
+    subcodeTtlHours: 6,         // 签发默认 TTL（§3.5；管理页/客户端不传时生效）
     maxPipesPerChannel: 4,      // 每通道并发管道上限（§3.5）
     joinPendingMs: 10_000,      // join 挂起等待 host 拨管道（§3.5）
     firstFrameTimeoutMs: 10_000,

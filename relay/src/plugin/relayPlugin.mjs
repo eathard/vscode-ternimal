@@ -76,11 +76,24 @@ function dialControl() {
   let registered = false;
   control = ws;
 
+  // 心跳失活看门狗：服务端心跳 30s/次；超过 3 个周期无任何消息
+  // （中继重启/代理半开等未收到 close 的僵尸连接）→ 主动断开走重连。
+  let lastMsgAt = Date.now();
+  const watchdog = setInterval(() => {
+    if (state !== 'registered') return;
+    if (Date.now() - lastMsgAt > 100_000) {
+      try { ws.terminate(); } catch { /* 已死 */ }
+    }
+  }, 15_000);
+  ws.on('close', () => clearInterval(watchdog));
+
   ws.on('open', () => {
+    lastMsgAt = Date.now();
     ws.send(JSON.stringify({ v: 1, type: 'register', masterCode: cfg.masterCode }));
   });
 
   ws.on('message', (raw) => {
+    lastMsgAt = Date.now();
     let m;
     try { m = JSON.parse(raw.toString()); } catch { return; }
     if (m.type === 'registered') {

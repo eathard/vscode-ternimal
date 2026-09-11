@@ -33,7 +33,7 @@ const adminHash = `scrypt$${salt.toString('hex')}$${crypto.scryptSync(ADMIN_PW, 
 let pass = 0, fail = 0;
 async function test(name, fn) {
   try { await fn(); pass++; console.log(`  ✔ ${name}`); }
-  catch (err) { fail++; console.log(`  ✘ ${name}\n    ${err.stack?.split('\n')[0] ?? err}`); }
+  catch (err) { fail++; console.log(`  ✘ ${name}\n    ${err.stack?.split('\n')[0] ?? err}` + (err.actual !== undefined ? ` [actual=${err.actual} expected=${err.expected}]` : '')); }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -70,6 +70,7 @@ let adminTok = '';
 let pluginB = null;
 let pluginC = null;
 let b01code = '';
+let pluginChannelB = '';
 
 await test('A-01 /admin 配置后 200 且含登录界面（含 JS 语法门禁）', async () => {
   const r = await fetch(`${BASE}/admin`);
@@ -244,6 +245,8 @@ await test('B-01 管理页签发带有效期主码 → 插件注册成功', asyn
   pluginB.on('error', () => {});
   pluginB.send({ type: 'config', config: { relayUrl: 'ws://127.0.0.1:18045', masterCode: j.code, localPort, fingerprint: tls.fingerprint } });
   assert.ok(await waitReg(pluginB, 1), '30 天主码可注册');
+  const regMsg = pluginB.inbox.find((m) => m.type === 'status' && m.state === 'registered');
+  pluginChannelB = (regMsg?.detail || '').replace('channel ', '');
   const lst = await fetch(`${BASE_B}/api/admin/masters`, { headers: { authorization: `Bearer ${tok}` } }).then((x) => x.json());
   const mine = lst.masters.find((m) => m.id === j.id);
   assert.ok(mine && mine.status === 'active' && mine.remainingMs > 29 * 86_400_000, '列表显示有效+剩余');
@@ -316,6 +319,48 @@ await test('B-05 legacy 明文哈希主码=永久有效（存量部署不受影�
   const legacy = lst.masters.find((m) => m.permanent);
   assert.ok(legacy, 'legacy 条目存在且标记永久');
   assert.equal(legacy.status, 'permanent');
+});
+
+await test('B-06 子码时效：默认 6h，续期 +1天/+7天/长期，吊销不可续', async () => {
+  const tok = await loginB();
+  const H = { authorization: `Bearer ${tok}`, 'content-type': 'application/json' };
+  // ① 默认 TTL = 6h（不传 ttlHours）
+  if (!pluginChannelB) {
+    const ov = await fetch(`${BASE_B}/api/admin/overview`, { headers: H }).then((r) => r.json());
+    pluginChannelB = (ov.channels.find((c) => c.online) || ov.channels[0] || {}).id || '';
+  }
+  const iss = await fetch(`${BASE_B}/api/channels/subcodes`, {
+    method: 'POST', headers: H,
+    body: JSON.stringify({ channelId: pluginChannelB, label: 'b06-default' }),
+  }).then((r) => { assert.equal(r.status, 201); return r.json(); });
+  const d6h = iss.expiresAt - Date.now();
+  assert.ok(d6h > 5.9 * 3600_000 && d6h < 6.1 * 3600_000, '默认 6 小时, 实测 ' + (d6h / 3600_000).toFixed(2) + 'h');
+  // ② +1 天：从当前到期顺延
+  const r1 = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}/renew`, {
+    method: 'POST', headers: H, body: JSON.stringify({ days: 1 }),
+  }).then((r) => { assert.equal(r.status, 200); return r.json(); });
+  assert.ok(Math.abs(r1.expiresAt - (iss.expiresAt + 86_400_000)) < 2_000, '+1天=顺延 24h');
+  // ③ 再 +7 天
+  const r7 = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}/renew`, {
+    method: 'POST', headers: H, body: JSON.stringify({ days: 7 }),
+  }).then((r) => { assert.equal(r.status, 200); return r.json(); });
+  assert.ok(Math.abs(r7.expiresAt - (r1.expiresAt + 7 * 86_400_000)) < 2_000, '+7天在 +1天 基础上顺延');
+  // ④ 长期：expiresAt = null
+  const rp = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}/renew`, {
+    method: 'POST', headers: H, body: JSON.stringify({ permanent: true }),
+  }).then((r) => { assert.equal(r.status, 200); return r.json(); });
+  assert.strictEqual(rp.expiresAt, null, '长期 → null');
+  // ⑤ 吊销后不可续（终态）
+  await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}?channel=${encodeURIComponent(pluginChannelB)}`, { method: 'DELETE', headers: H });
+  const rr = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}/renew`, {
+    method: 'POST', headers: H, body: JSON.stringify({ days: 1 }),
+  });
+  assert.equal(rr.status, 409, '吊销后续期被拒');
+  // ⑥ 未授权不可续
+  const ro = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}/renew`, {
+    method: 'POST', body: JSON.stringify({ days: 1 }),
+  });
+  assert.equal(ro.status, 401, '无凭证续期被拒');
 });
 
 relayB.stop();

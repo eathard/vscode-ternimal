@@ -309,7 +309,7 @@ export class RelayServer {
     const sc = this.store.findSubCode(msg.subCode);
     if (!sc) { this.authFail(ws, ip, msg.subCode, CLOSE.BAD_CODE); return null; }
     if (sc.revoked) { this.errorThenClose(ws, CLOSE.SUBCODE_REVOKED, 'revoked'); return null; }
-    if (sc.expiresAt <= Date.now()) { this.errorThenClose(ws, CLOSE.SUBCODE_EXPIRED, 'expired'); return null; }
+    if (sc.expiresAt && sc.expiresAt <= Date.now()) { this.errorThenClose(ws, CLOSE.SUBCODE_EXPIRED, 'expired'); return null; }
     const ch = this.store.getChannel(sc.channelId);
     if (!ch || !ch.control || ch.control.ws.readyState !== OPEN) {
       this.errorThenClose(ws, CLOSE.HOST_OFFLINE, 'host offline');
@@ -509,7 +509,7 @@ export class RelayServer {
       }
       for (const pipe of [...ch.pipes]) {
         const sc = ch.subcodes.get(pipe.subCodeId);
-        if (sc && (sc.revoked || sc.expiresAt <= now)) {
+        if (sc && (sc.revoked || (sc.expiresAt && sc.expiresAt <= now))) {
           pipe.kill(sc.revoked ? 'subcode revoked' : 'subcode expired');
           continue;
         }
@@ -733,7 +733,10 @@ export class RelayServer {
       // 主码 → 本通道；管理会话 → 显式 channelId（管理页代签）
       const channelId = authed() ?? (this.adminOk(req) && body.channelId ? body.channelId : null);
       if (!channelId) return send(401, { error: 'unauthorized' });
-      const rec = this.store.issueSubCode(channelId, { ttlHours: body.ttlHours, label: body.label });
+      const rec = this.store.issueSubCode(channelId, {
+        ttlHours: body.ttlHours ?? this.subcodeTtlHours ?? 6,
+        label: body.label,
+      });
       this.info(`subcode ${rec.id} issued on ${channelId.slice(0, 8)}…`);
       return send(201, { subCode: rec.code, id: rec.id, label: rec.label, expiresAt: rec.expiresAt });
     }
@@ -753,6 +756,23 @@ export class RelayServer {
       return send(200, { subcodes });
     }
 
+    {
+      const rm = p.match(/^\/api\/channels\/subcodes\/([^/]+)\/renew$/);
+      if (rm && req.method === 'POST') {
+        if (this.byIp.isLocked(ip)) return send(429, { error: 'rate limited' });
+        const rec = this.store.findSubCodeById(rm[1]);
+        if (!rec) return send(404, { error: 'no such subcode' });
+        // 授权：管理会话；或属主主码（authed() 返回其通道 id）
+        if (!this.adminOk(req) && authed() !== rec.channelId) return send(401, { error: 'unauthorized' });
+        const body = await readJson(req);
+        if (!body || typeof body !== 'object') return send(400, { error: 'bad body' });
+        if (body.permanent !== true && body.days === undefined) return send(400, { error: 'days or permanent required' });
+        const out = this.store.renewSubCode(rec.id, { days: body.days, permanent: body.permanent === true });
+        if (!out) return send(409, { error: 'revoked subcode cannot renew' });
+        this.info(`subcode ${rec.id} renewed (${body.permanent === true ? 'permanent' : '+' + body.days + 'd'})`);
+        return send(200, { id: out.id, expiresAt: out.expiresAt });
+      }
+    }
     const m = p.match(/^\/api\/channels\/subcodes\/([^/]+)$/);
     if (m && req.method === 'DELETE') {
       const q = url.searchParams;
