@@ -73,6 +73,14 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - `relay/` is a standalone zero-knowledge relay server (Node, no build step; `relay/cli.mjs serve`). Its verification suites: `npm run verify:relay` (+ `verify:instances` for multi-instance). Runtime `relay/relay-config.json` is gitignored (contains credential hashes).
 - Multi-instance: `--ternimal-instance=<id>` (or `TERNIMAL_INSTANCE`) gives each instance its own userData under `instances/<id>/` (config seeded from default with relay DISABLED — same master code in two instances causes a takeover war), a claimed color (top bar + tray icon + window title), and automatic port fallback on EADDRINUSE. Default launch is untouched.
 
+## Windows Packaging (on a real Windows box)
+
+- Build natively on Windows when possible: `npm ci --ignore-scripts --registry=https://registry.npmmirror.com` then `npm run build` then `npx electron-builder --win nsis --x64 -c.npmRebuild=false`
+  - `--ignore-scripts` + `-c.npmRebuild=false`: node-pty ships win32-x64 prebuilds (N-API) that Electron loads as-is; skipping rebuild avoids needing VS Build Tools (verified end-to-end: ConPTY works in the shipped exe)
+- **3rd-party AV (Huorong/Lenovo) eats node_modules files mid-install** (random missing package.json / electron install.js). Add the project dir + electron cache to the AV trust zone before npm ci, or builds flake with `\\?\...` ENOENT errors
+- ssh-spawned GUI processes land in a hidden session (no desktop/tray) — use schtasks InteractiveToken or the user's own double-click for visible-window testing; sshd also kills the process tree when the session closes
+- PowerShell over ssh: nested `powershell -Command` eats `$vars` (double interpolation) — ship `.ps1` files instead; native stderr (npm warnings) becomes terminating errors with ErrorActionPreference=Stop
+
 ## Build & Platform Gotchas
 
 - `node-pty` is a **native module**, excluded from the webpack bundle (`externals` in webpack.main.config.js). After changing Electron or node-pty versions, run `npm run rebuild` or the app will crash on startup
