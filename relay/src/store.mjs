@@ -120,6 +120,13 @@ export class MemoryStore {
     return sc;
   }
 
+  /** 删除子码记录（吊销后的清理：从内存表移除，管道已死）。 */
+  purgeSubCode(channelId, subCodeId) {
+    const ch = this.getChannel(channelId);
+    if (!ch || !ch.subcodes.has(subCodeId)) return null;
+    return ch.subcodes.delete(subCodeId) ? { id: subCodeId, purged: true } : null;
+  }
+
   /** 状态快照（/health 与调试用）。 */
   snapshot() {
     return {

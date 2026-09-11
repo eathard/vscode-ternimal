@@ -289,8 +289,9 @@ async function handleCommand(msg) {
       return reply(r.ok ? { ok: true, subcodes: r.subcodes } : { ok: false, status: r.status });
     }
     if (msg.cmd === 'revoke-subcode') {
-      const r = await apiCall('DELETE', `/api/channels/subcodes/${encodeURIComponent(msg.subCodeId)}`);
-      return reply(r.ok ? { ok: true } : { ok: false, status: r.status });
+      const qs = msg.purge === true ? '?purge=1' : '';
+      const r = await apiCall('DELETE', `/api/channels/subcodes/${encodeURIComponent(msg.subCodeId)}${qs}`);
+      return reply(r.ok ? { ok: true, purged: r.purged === true } : { ok: false, status: r.status });
     }
     if (msg.cmd === 'renew-subcode') {
       const body = msg.permanent === true ? { permanent: true } : { days: msg.days };

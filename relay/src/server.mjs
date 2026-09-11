@@ -778,6 +778,19 @@ export class RelayServer {
       const q = url.searchParams;
       const channelId = authed() ?? (this.adminOk(req) && q.get('channel') ? q.get('channel') : null);
       if (!channelId) return send(401, { error: 'unauthorized' });
+      if (q.get('purge') === '1') {
+        // 删除（吊销后的清理）：记录从表中移除；若仍活跃先终止管道
+        const ch0 = this.store.getChannel(channelId);
+        const rec0 = ch0?.subcodes.get(m[1]);
+        if (!rec0) return send(404, { error: 'no such subcode' });
+        for (const pipe of [...(ch0?.pipes ?? [])]) {
+          if (pipe.subCodeId === rec0.id) pipe.kill('subcode deleted');
+        }
+        const out = this.store.purgeSubCode(channelId, m[1]);
+        if (!out) return send(404, { error: 'no such subcode' });
+        this.info(`subcode ${rec0.id} purged`);
+        return send(200, { ok: true, id: rec0.id, purged: true });
+      }
       const rec = this.store.revokeSubCode(channelId, m[1]);
       if (!rec) return send(404, { error: 'no such subcode' });
       // 吊销立即生效：终止其名下活跃管道（TC-R3-07 语义）

@@ -319,12 +319,14 @@ async function refreshSubcodes(): Promise<void> {
           row.appendChild(btn);
         }
       }
-      const revoke = el('button', 'rs-button rs-small rs-danger', t(locale, 'settings.relay.revoke')) as HTMLButtonElement;
-      revoke.disabled = sub.revoked;
-      revoke.addEventListener('click', () => {
-        void window.electronAPI.relayRevokeSubcode(sub.id).then(refreshSubcodes);
+      // 吊销后按钮变「删除」（purge：从表中移除记录）
+      const action = sub.revoked
+        ? el('button', 'rs-button rs-small rs-danger', t(locale, 'settings.relay.delete'))
+        : el('button', 'rs-button rs-small rs-danger', t(locale, 'settings.relay.revoke'));
+      action.addEventListener('click', () => {
+        void window.electronAPI.relayRevokeSubcode(sub.id, sub.revoked).then(refreshSubcodes);
       });
-      row.appendChild(revoke);
+      row.appendChild(action);
       list.appendChild(row);
     }
   } catch {

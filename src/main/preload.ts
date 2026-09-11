@@ -73,8 +73,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   relayListSubcodes: () => {
     return ipcRenderer.invoke(IPC.RELAY_LIST_SUBCODES);
   },
-  relayRevokeSubcode: (id: string) => {
-    return ipcRenderer.invoke(IPC.RELAY_REVOKE_SUBCODE, id);
+  relayRevokeSubcode: (id: string, purge?: boolean) => {
+    return ipcRenderer.invoke(IPC.RELAY_REVOKE_SUBCODE, id, purge);
   },
   relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => {
     return ipcRenderer.invoke(IPC.RELAY_RENEW_SUBCODE, id, opts);

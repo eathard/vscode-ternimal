@@ -215,8 +215,8 @@ export class RelayPluginHost extends (EventEmitter as new () => RelayPluginEvent
     return (reply['subcodes'] as unknown[]) ?? [];
   }
 
-  async revokeSubCode(subCodeId: string): Promise<void> {
-    await this.request({ cmd: 'revoke-subcode', subCodeId });
+  async revokeSubCode(subCodeId: string, opts: { purge?: boolean } = {}): Promise<void> {
+    await this.request({ cmd: 'revoke-subcode', subCodeId, purge: opts.purge === true });
   }
 
   /** 子码续期：days 天顺延；permanent=true 转长期。返回新 expiresAt（长期=null）。 */

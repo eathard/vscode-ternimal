@@ -361,6 +361,17 @@ await test('B-06 子码时效：默认 6h，续期 +1天/+7天/长期，吊销�
     method: 'POST', body: JSON.stringify({ days: 1 }),
   });
   assert.equal(ro.status, 401, '无凭证续期被拒');
+  // ⑦ Delete（purge）：吊销后的清理路径——记录从列表移除
+  const pg = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}?purge=1&channel=${encodeURIComponent(pluginChannelB)}`, {
+    method: 'DELETE', headers: H,
+  });
+  assert.equal(pg.status, 200, 'purge 200');
+  const lst = await fetch(`${BASE_B}/api/channels/subcodes?channel=${encodeURIComponent(pluginChannelB)}`, { headers: H }).then((r) => r.json());
+  assert.ok(!lst.subcodes.some((x) => x.id === iss.id), 'purge 后列表无该记录');
+  const pg2 = await fetch(`${BASE_B}/api/channels/subcodes/${iss.id}?purge=1&channel=${encodeURIComponent(pluginChannelB)}`, {
+    method: 'DELETE', headers: H,
+  });
+  assert.equal(pg2.status, 404, '重复 purge → 404');
 });
 
 relayB.stop();

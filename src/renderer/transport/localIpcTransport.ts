@@ -34,7 +34,7 @@ declare global {
       relayApplySettings: (patch: Partial<RelaySettingsDto>) => Promise<RelaySettingsDto>;
       relayShareLink: (label?: string, ttlHours?: number) => Promise<RelayShareLink>;
       relayListSubcodes: () => Promise<RelaySubcodeInfo[]>;
-      relayRevokeSubcode: (id: string) => Promise<void>;
+      relayRevokeSubcode: (id: string, purge?: boolean) => Promise<void>;
       relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => Promise<number | null>;
       onRelayStatus: (callback: (status: RelayStatusEvent) => void) => () => void;
     };

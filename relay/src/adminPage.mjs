@@ -170,7 +170,9 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           h += '<tr><td><code>' + esc(String(s.code).slice(0, 14)) + '…</code></td><td>' + esc(s.label || '') +
             '</td><td>' + st + '</td><td>' + due + '</td><td>' + rem + '</td><td class="num">' + s.stats.joins +
             '</td><td class="num">' + fmtBytes(s.stats.bytes) + '</td>' +
-            '<td>' + rn + (s.revoked ? '' : '<button class="danger" data-rev="' + esc(c.id) + '/' + esc(s.id) + '">吊销</button>') + '</td></tr>';
+            '<td>' + rn + (s.revoked
+              ? '<button class="danger" data-del="' + esc(c.id) + '/' + esc(s.id) + '">删除</button>'
+              : '<button class="danger" data-rev="' + esc(c.id) + '/' + esc(s.id) + '">吊销</button>') + '</td></tr>';
         });
         h += '</table>';
         h += '<details><summary>为此通道签发子码</summary><div class="row">' +
@@ -280,6 +282,14 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           var parts = b.getAttribute('data-rev').split('/');
           if (!confirm('吊销该子码？其管道将立即断开。')) return;
           api('DELETE', '/api/channels/subcodes/' + encodeURIComponent(parts[1]) + '?channel=' + encodeURIComponent(parts[0]))
+            .then(render);
+        };
+      });
+      Array.prototype.forEach.call(app.querySelectorAll('[data-del]'), function (b) {
+        var parts = b.getAttribute('data-del').split('/');
+        b.onclick = function () {
+          if (!confirm('删除该子码记录？将从列表移除（不可恢复）。')) return;
+          api('DELETE', '/api/channels/subcodes/' + encodeURIComponent(parts[1]) + '?purge=1&channel=' + encodeURIComponent(parts[0]))
             .then(render);
         };
       });
