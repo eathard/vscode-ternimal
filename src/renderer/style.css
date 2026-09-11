@@ -446,3 +446,22 @@ html, body {
 .rs-token-apply:hover {
   background: rgba(215, 186, 125, 0.15);
 }
+
+/* web 观看端「适配本机宽度」chip */
+.web-adapt-chip {
+  position: fixed;
+  right: 10px;
+  bottom: 54px;
+  z-index: 60;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 12px;
+  border: 1px solid #3c3c3c;
+  background: rgba(30, 30, 30, 0.9);
+  color: #9a9a9a;
+  cursor: pointer;
+}
+.web-adapt-chip.owning {
+  color: #d7ba7d;
+  border-color: #d7ba7d;
+}

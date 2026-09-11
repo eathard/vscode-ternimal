@@ -92,6 +92,11 @@ function mountApp(root: HTMLElement): TerminalApp {
     const app = new TerminalApp(root);
     // Soft keyboard (Ctrl/Alt/Shift combos + Esc/Tab) — web only.
     mountSoftKeys(app);
+    // Follow mode (web viewers): attached sessions keep their geometry —
+    // phone rotation/keyboard-open become pure display changes. Tabs this
+    // client creates still own theirs; per-tab opt-in via the adapt chip.
+    app.setFollowMode(true);
+    mountAdaptChip(app, locale);
     return app;
   } catch (err) {
     console.error('[Ternimal/Web] Failed to create TerminalApp:', err);
@@ -99,4 +104,37 @@ function mountApp(root: HTMLElement): TerminalApp {
       '<pre style="color:red;padding:20px;">Error: ' + err + '</pre>';
     throw err;
   }
+}
+
+/**
+ * 「适配本机宽度」chip（web only）：显示当前标签几何归属，点击切换。
+ * 跟随=只影响本机视图；适配=本端接管会话尺寸（last-writer-wins）。
+ */
+function mountAdaptChip(app: TerminalApp, locale: ReturnType<typeof detectLocale>): void {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'web-adapt-chip';
+  chip.style.display = 'none';
+  const refresh = (): void => {
+    const id = app.getActiveTabId();
+    if (!id) {
+      chip.style.display = 'none';
+      return;
+    }
+    const owning = app.isGeometryOwner(id);
+    chip.style.display = '';
+    chip.classList.toggle('owning', owning);
+    chip.textContent = owning
+      ? t(locale, 'web.adapt.on')
+      : t(locale, 'web.adapt.off');
+    chip.title = t(locale, 'web.adapt.hint');
+  };
+  chip.addEventListener('click', () => {
+    app.toggleAdapt(null);
+    refresh();
+  });
+  document.body.appendChild(chip);
+  // 初次挂载 + 每次标签切换后刷新
+  setTimeout(refresh, 400);
+  setInterval(refresh, 1500);
 }

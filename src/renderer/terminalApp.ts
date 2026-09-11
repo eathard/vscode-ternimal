@@ -22,6 +22,10 @@ import {
 
 export class TerminalApp {
   private tabs: Map<string, TerminalTab> = new Map();
+  /** Web follow-mode: attached (not created-here) tabs never resize the PTY. */
+  private followMode = false;
+  /** Session ids created by THIS client — they keep geometry ownership. */
+  private createdHere = new Set<string>();
   private activeTabId: string | null = null;
   private tabBar: TabBar;
   private searchBar: SearchBar;
@@ -121,16 +125,65 @@ export class TerminalApp {
 
   async newTab(shell?: string, cwd?: string): Promise<string> {
     const info = await getTransport().createTab({ shell, cwd });
-    this.addTabFromInfo(info, { activate: true });
+    this.addTabFromInfo(info, { activate: true, createdHere: true });
     return info.id;
   }
 
-  private addTabFromInfo(info: SessionInfo, opts: { activate: boolean }): void {
+  /**
+   * Follow mode (web viewers): attached tabs stop resizing the shared PTY.
+   * Per-tab overrides persist in localStorage ('1' own / '0' follow).
+   */
+  setFollowMode(on: boolean): void {
+    this.followMode = on;
+    for (const [id, tab] of this.tabs) tab.setGeometryOwner(this.effectiveOwner(id));
+  }
+
+  /** Toggle the active tab's geometry ownership; returns the new state. */
+  toggleAdapt(tabId: string | null): boolean {
+    const id = tabId ?? this.activeTabId;
+    if (!id) return false;
+    const cur = this.effectiveOwner(id);
+    const tab = this.tabs.get(id);
+    if (!tab) return false;
+    try {
+      window.localStorage.setItem(`ternimal.adapt.${id}`, cur ? '0' : '1');
+    } catch { /* private mode etc. */ }
+    tab.setGeometryOwner(!cur);
+    return !cur;
+  }
+
+  getActiveTabId(): string | null {
+    return this.activeTabId;
+  }
+
+  /** Current geometry-ownership state of a tab (chip UI reads this). */
+  isGeometryOwner(id: string): boolean {
+    return this.tabs.get(id)?.geometryOwner ?? true;
+  }
+
+  private effectiveOwner(id: string): boolean {
+    if (!this.followMode) return true; // Electron window: everyone owns (unchanged)
+    let override: string | null = null;
+    try {
+      override = window.localStorage.getItem(`ternimal.adapt.${id}`);
+    } catch { /* ignore */ }
+    if (override === '1') return true;
+    if (override === '0') return false;
+    return this.createdHere.has(id);
+  }
+
+  private addTabFromInfo(info: SessionInfo, opts: { activate: boolean; createdHere?: boolean }): void {
     if (this.tabs.has(info.id)) {
       // Dedupe vs onTabsChange echo — but a LATE activate intent (the
       // session was adopted by reconcile before createTab resolved)
       // must not be swallowed: the tab would stay hidden forever.
+      // Same for geometry ownership: reconcile created it as a follower;
+      // the resolved create confirms THIS client made it.
       if (opts.activate) this.switchTab(info.id);
+      if (opts.createdHere) {
+        this.createdHere.add(info.id);
+        this.tabs.get(info.id)?.setGeometryOwner(this.effectiveOwner(info.id));
+      }
       return;
     }
 
@@ -147,6 +200,11 @@ export class TerminalApp {
 
     this.tabs.set(info.id, tab);
     this.tabBar.addTab(info.id, info.title || 'Terminal');
+
+    // Geometry ownership (phone follow-mode, docs/phone-display-issue.md):
+    // creator keeps it; attached tabs follow unless the user opts in per-tab.
+    if (opts.createdHere) this.createdHere.add(info.id);
+    tab.setGeometryOwner(this.effectiveOwner(info.id));
 
     // M4 TC-M4-03: a tab born from server truth (reopen/reconcile) restores
     // its scrollback from the server-side ring buffer when the transport

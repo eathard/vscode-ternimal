@@ -19,6 +19,17 @@ export class TerminalTab {
   readonly container: HTMLElement;
   private title: string;
   private alive: boolean = true;
+  /** Geometry owner: may resize the shared PTY. Viewers (follow mode) may not. */
+  geometryOwner = true;
+
+  /** Switch geometry ownership; taking ownership immediately syncs our size. */
+  setGeometryOwner(owner: boolean): void {
+    this.geometryOwner = owner;
+    if (owner && this.alive) {
+      const dims = this.wrapper.getDimensions();
+      getTransport().resize(this.id, dims.cols, dims.rows);
+    }
+  }
   private unsubs: (() => void)[] = [];
 
   onExit: ((tab: TerminalTab) => void) | null = null;
@@ -92,9 +103,12 @@ export class TerminalTab {
     );
 
     // xterm resize -> session (fit fires right after attachToDom, syncing
-    // the registry's initial 80x24 to the real viewport)
+    // the registry's initial 80x24 to the real viewport).
+    // Geometry ownership (phone follow-mode): followers render the shared
+    // stream at their own fitted width but NEVER resize the PTY — rotation
+    // and keyboard-open stay pure display changes on the viewer.
     this.wrapper.onResize((cols, rows) => {
-      if (this.alive) {
+      if (this.alive && this.geometryOwner) {
         transport.resize(this.id, cols, rows);
       }
     });

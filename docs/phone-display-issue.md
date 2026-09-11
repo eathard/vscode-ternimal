@@ -1,6 +1,6 @@
 # 手机端显示问题：反馈描述与解决方案
 
-> 状态：问题一已修复（b91b3ff）；问题二方案已定稿待实施
+> 状态：问题一已修复（b91b3ff）；问题二已实施并三轮验收通过（见文末）
 > 来源：产品所有者实测反馈（2026-09-11）
 
 ## 一、用户反馈的问题
@@ -70,3 +70,19 @@ WebGL。验证：390px 手机仿真 + 5 轮键盘开合风暴中输出内容完�
 - [ ] M4/browser 套件 + smoke-e2e + 手机仿真探针全绿；桌面拖拽跟手无回退。
 
 **工作量**：约 0.5~0.8 天（含验证）。
+
+## 三、实施记录（问题二）
+
+- `terminalTab`：`geometryOwner` 守卫——跟随者本地 fit 但不发送 resize；
+  接管时立即以当前尺寸同步（`setGeometryOwner(true)`）。
+- `terminalApp`：`createdHere` 集合 + `setFollowMode` + 每标签 localStorage
+  覆盖（`ternimal.adapt.<id>` = '1'/'0'）+ `toggleAdapt`/`isGeometryOwner`。
+  关键坑：reconcile 先于 createTab 到达时去重路径会吞掉 createdHere
+  标记——去重分支需补记（否则自建会话被误判为跟随者）。
+- web 入口：默认开启跟随模式 + 「适配本机宽度」chip（i18n 中英）。
+- 服务端零改动（registry 本就随 resize 更新 SessionInfo 并广播）。
+- 验收（scripts/verify-web-follow.mjs，手机仿真，3 轮全过）：
+  - [x] 自建会话旋转改变 stty（32 111 → 18 98）
+  - [x] 跟随会话旋转×5 stty 不变
+  - [x] chip 接管后旋转变；还回后旋转不变
+  - [x] verify 伞 + smoke-e2e 全绿；桌面（Electron）路径零改动
