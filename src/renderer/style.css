@@ -348,3 +348,25 @@ html, body {
   background: #5a4a1f; color: #ffdf9e; font-family: system-ui, sans-serif;
   font-size: 12px; text-align: center; padding: 5px 0;
 }
+
+/* 中继地址栏「?」帮助按钮：小圆标，悬停高亮，点击系统浏览器打开 GitHub 帮助 */
+.rs-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border: 1px solid #4a4a4a;
+  border-radius: 50%;
+  color: #8a8a8a;
+  font-size: 11px;
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: middle;
+  transition: all 0.15s ease;
+}
+.rs-help:hover {
+  border-color: #d7ba7d;
+  color: #d7ba7d;
+}

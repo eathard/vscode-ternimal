@@ -65,7 +65,9 @@ function buildPanel(): HTMLElement {
   enabledRow.appendChild(el('span', 'rs-label', t(locale, 'settings.relay.enable')));
   form.appendChild(enabledRow);
 
-  const urlInput = labeledInput(form, t(locale, 'settings.relay.url'), 'text');
+  const RELAY_HELP_URL =
+    'https://github.com/eathard/vscode-ternimal/blob/main/docs/relay-help.md';
+  const urlInput = labeledInput(form, t(locale, 'settings.relay.url'), 'text', RELAY_HELP_URL);
   const masterInput = labeledInput(form, t(locale, 'settings.relay.master'), 'password');
   // 主码行「显示密码」：勾选明文/取消遮蔽（与管理页登录卡同交互）
   {
@@ -263,9 +265,24 @@ function buildPanel(): HTMLElement {
   function labeledInput(
     parent: HTMLElement,
     label: string,
-    type: string
+    type: string,
+    helpUrl?: string
   ): HTMLInputElement {
-    parent.appendChild(el('div', 'rs-label', label));
+    const labelRow = el('div', 'rs-label');
+    labelRow.textContent = label;
+    if (helpUrl) {
+      // 「?」帮助按钮：首次安装用户对中继概念陌生 → 跳转 GitHub 图文帮助（含自建/购买两种用法）
+      const help = document.createElement('a');
+      help.className = 'rs-help';
+      help.href = helpUrl;
+      help.target = '_blank';
+      help.rel = 'noreferrer';
+      help.textContent = '?';
+      help.title = t(locale, 'settings.relay.help');
+      help.setAttribute('aria-label', 'relay help');
+      labelRow.appendChild(help);
+    }
+    parent.appendChild(labelRow);
     const input = document.createElement('input');
     input.type = type;
     input.className = 'rs-input';
