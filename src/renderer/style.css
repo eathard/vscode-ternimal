@@ -216,7 +216,7 @@ html, body {
 }
 
 .rs-panel {
-  width: 520px;
+  width: 720px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 64px);
   overflow-y: auto;
@@ -287,7 +287,10 @@ html, body {
 }
 
 .rs-sublist { display: flex; flex-direction: column; gap: 4px; }
-.rs-sub { display: flex; align-items: center; gap: 8px; }
+.rs-sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 3px 0; }
+.rs-sub-rem { color: #d7ba7d; font-size: 11px; min-width: 64px; }
+.rs-sub .rs-button.rs-small { flex-shrink: 0; }
+
 .rs-sub-code { font-family: ui-monospace, monospace; font-size: 11px; color: #cfcfcf; }
 .rs-sub-exp { color: #9a9a9a; font-size: 11px; flex: 1; }
 .rs-empty { color: #6a6a6a; font-size: 12px; }
