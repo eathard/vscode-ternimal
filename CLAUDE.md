@@ -73,6 +73,13 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - `relay/` is a standalone zero-knowledge relay server (Node, no build step; `relay/cli.mjs serve`). Its verification suites: `npm run verify:relay` (+ `verify:instances` for multi-instance). Runtime `relay/relay-config.json` is gitignored (contains credential hashes).
 - Multi-instance: `--ternimal-instance=<id>` (or `TERNIMAL_INSTANCE`) gives each instance its own userData under `instances/<id>/` (config seeded from default with relay DISABLED — same master code in two instances causes a takeover war), a claimed color (top bar + tray icon + window title), and automatic port fallback on EADDRINUSE. Default launch is untouched.
 
+## Access Token (tconf_v1) — one-paste setup
+
+- `relay/src/token.mjs` = shared codec (zlib raw + base64url + 8-hex checksum, prefix `tconf_v1_`), imported BOTH by relay (CLI/admin API) and the app main process (webpack inlines it; only node:zlib/crypto deps). Never duplicate the codec.
+- Admin binds `publicUrl` + `publicCaPem` once (PUT /api/admin/access, or `cli.mjs bind-access --url … --ca-file root.crt`; persisted in relay-config.json). Issuing a master then embeds a token in the response; `POST /api/admin/token {code}` mints one for an existing master (server stores hashes only — the plaintext code must be supplied by the operator).
+- App: ⚙ panel top card — paste → RELAY_PREVIEW_TOKEN (masked summary) → RELAY_APPLY_TOKEN (writes CA to userData/certs/relay-ca.pem, fills url/master/caPath, connects). Manual fields remain for domain+public-CA users.
+- QR intentionally dropped: the token is consumed by the desktop app (paste), phones can't use it.
+
 ## Same-Master Conflict: Intent Preemption (方案一)
 
 - One master code = one live device. New plugin (proto:2) registering against a LIVE holder gets `occupied` (UI shows 在别处使用中 + 强制接管); the holder stays untouched. A 30s silent probe auto-takes-over once the holder dies (machine migration = zero clicks).
