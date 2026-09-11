@@ -95,6 +95,12 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - ssh-spawned GUI processes land in a hidden session (no desktop/tray) — use schtasks InteractiveToken or the user's own double-click for visible-window testing; sshd also kills the process tree when the session closes
 - PowerShell over ssh: nested `powershell -Command` eats `$vars` (double interpolation) — ship `.ps1` files instead; native stderr (npm warnings) becomes terminating errors with ErrorActionPreference=Stop
 
+## VPS relay ops gotchas (systemd unit `ternimal-relay`, User=ubuntu)
+
+- **NEVER run `sudo node cli.mjs bind-access/add-master/…` against the live config**: saveConfig rewrites `relay-config.json` as `root:root 0600`, then the `ubuntu` service user silently loads NOTHING (loadConfig swallows EACCES → defaults: admin "not configured", masters gone, access unbound — relay keeps serving). Fix if hit: `sudo chown ubuntu:ubuntu relay-config.json && sudo systemctl restart ternimal-relay`. Run CLI ops as the service user (or chown afterwards).
+- Relay restarts clear subcodes/channels (memory-only): clients auto re-register, but users must regenerate tray share links.
+- Admin page ops (PUT access / mint token) are the SAFE path vs CLI on a root-owned config — they write via the running process, keeping ownership intact.
+
 ## Build & Platform Gotchas
 
 - `node-pty` is a **native module**, excluded from the webpack bundle (`externals` in webpack.main.config.js). After changing Electron or node-pty versions, run `npm run rebuild` or the app will crash on startup
