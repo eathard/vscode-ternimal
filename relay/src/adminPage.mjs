@@ -231,7 +231,8 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           '<button id="iss-hide">我已保存，隐藏</button></div>' +
           '<div class="muted">有效期至 ' + new Date(lastIss.expiresAt).toLocaleString() +
           ' · 到期自动停止 · 续期在下方列表点 +30 天</div>' +
-          (lastIss.token ? '<div class="row" style="margin-top:6px"><b style="color:#d7ba7d">混合口令（发这条即可，App 粘贴即配）</b><button id="tok-copy" class="primary">复制口令</button></div>' +
+          (lastIss.token ? '<div class="row" style="margin-top:6px"><b style="color:#d7ba7d">混合口令（发这条即可，App 粘贴即配）</b><button id="tok-copy" class="primary">复制口令</button>' +
+          '<button id="tok-dl">下载为txt</button></div>' +
             '<div class="row"><code id="tok-code" style="width:100%;font-size:10px;padding:6px;background:#111;border-radius:6px;word-break:break-all">' + esc(lastIss.token) + '</code></div>' +
             '<div class="muted">含 地址+主码+CA证书 · 敏感度同主码，仅发给买家本人 · 校验段防截断</div>' : '') +
           '</div>';
@@ -268,6 +269,29 @@ export const ADMIN_JS = `// admin.js — 管理页逻辑：登录 → 总览轮�
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(txt).then(function () { tokCopy.textContent = '已复制 ✓'; setTimeout(function () { tokCopy.textContent = '复制口令'; }, 1600); });
           } else { fallbackCopy(txt); tokCopy.textContent = '已复制 ✓'; }
+        };
+      }
+      var tokDl = document.getElementById('tok-dl');
+      if (tokDl) {
+        tokDl.onclick = function () {
+          var tok = ((document.getElementById('tok-code') || {}).textContent || '').trim();
+          if (!tok) return;
+          var safeLabel = String(lastIss && lastIss.label ? lastIss.label : '').replace(/[^0-9A-Za-z_-]+/g, '').slice(0, 24);
+          var stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+          var body = 'Ternimal 接入口令\\n' +
+            '================\\n\\n' +
+            '使用方法：打开 Ternimal → ⚙ 设置 → 顶部「混合口令一键配置」，\\n' +
+            '把下面整行（tconf 开头到结尾，含最后的校验段）完整复制粘贴进去，\\n' +
+            '点「解析预览」核对后「应用并连接」即完成。\\n\\n' +
+            tok + '\\n\\n' +
+            '· 本文件等同密码（含主码），请勿转发他人\\n' +
+            '· 换电脑可重复使用同一条口令；有效期随套餐\\n';
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([body], { type: 'text/plain;charset=utf-8' }));
+          a.download = 'ternimal-token-' + (safeLabel ? safeLabel + '-' : '') + stamp + '.txt';
+          a.click();
+          tokDl.textContent = '已下载 ✓';
+          setTimeout(function () { tokDl.textContent = '下载为txt'; }, 1600);
         };
       }
       Array.prototype.forEach.call(app.querySelectorAll('[data-tok]'), function (b) {
