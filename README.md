@@ -73,6 +73,19 @@ survive every disconnect.
 
   <p align="center"><img src="docs/images/web-mobile.png" alt="Phone view with the floating soft-keyboard bar, Ctrl held sticky" width="240"></p>
 
+- **Zero-knowledge relay networking** — reach a machine behind NAT/firewall
+  from anywhere: self-host the relay (`relay/`, single-file Node, zero deps)
+  or buy hosted access. Zero knowledge with end-to-end encryption on by
+  default (the server only ever sees ciphertext); the master code is both
+  identity and billing unit, subcodes expire/revocable; **one master = one
+  live device** (intent-preempt on conflicts, ~30s auto-migration when you
+  switch machines — no reconnect wars).
+
+- **One-paste setup token** — for first-time buyers: issuing a master code
+  in the admin page also mints a `tconf_v1_…` token (URL + master + CA
+  cert, compressed). Paste it into the app's top card → preview → apply;
+  no manual certificate files, no paths to fill.
+
 - **Privacy-first networking** — self-signed TLS (SHA-256 fingerprint shown
   on both the sign-in page and the tray — anti-MITM), LAN/VPN only by
   design, per-IP rate limiting, `HttpOnly`+`Secure`+`SameSite=Strict`
@@ -219,6 +232,15 @@ attach 到这些会话**，断线多少次都活着。
   readline 元键跳词、vim 移动全可用
 
   <p align="center"><img src="docs/images/web-mobile.png" alt="手机视图：悬浮软键盘条，Ctrl 处于粘滞态" width="240"></p>
+
+- **零知识中继组网（跨网络远程）** —— 无公网 IP 也能从别处访问本机终端：
+  自建中继（`relay/`，单文件 Node 零依赖）或购买托管服务。零知识 + 默认
+  端到端加密（服务器只见密文）；主码=身份+计费，子码可定时吊销；
+  **一码一机**（同主码冲突走意图抢占，换机 30 秒自动迁移，不产生互踢战争）
+
+- **混合口令一键配置** —— 面向首购用户：卖家在管理页签发主码即得
+  `tconf_v1_…` 混合口令（地址+主码+CA 证书的压缩编码），App 顶部粘贴框
+  整条贴入 → 预览核对 → 一键应用，全程无需手动存证书/填路径
 
 - **隐私优先组网** —— 自签名 TLS（SHA-256 指纹登录页与托盘双侧展示，
   防中间人）；仅内网/VPN（设计如此）；每 IP 限速；硬化 cookie；WS 升级复验
