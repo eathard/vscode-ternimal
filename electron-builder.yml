@@ -9,7 +9,6 @@ win:
       arch:
         - x64
   icon: build/icon.ico
-  signAndEditExecutable: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -23,7 +22,7 @@ linux:
       arch:
         - x64
   category: TerminalEmulator
-  icon: build
+  icon: build/icon.png
   maintainer: Ternimal
   vendor: Ternimal
   synopsis: Standalone terminal emulator
