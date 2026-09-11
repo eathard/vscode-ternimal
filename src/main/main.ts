@@ -21,6 +21,20 @@ if (process.platform === 'linux') {
 // 必须在 app ready 前完成 setPath（默认实例零迁移）。
 const INSTANCE_ID = resolveInstanceId(process.argv, process.env);
 const INSTANCE_COLOR = isolateUserData(app, INSTANCE_ID);
+// 单实例锁（按实例 userData 隔离）：同实例双开 = 第二个立即退出并聚焦已有窗口。
+// 根除「同主码双进程 → 中继接管互踢 → 无限重连」这类稳定性事故。
+const gotLock = app.requestSingleInstanceLock({ instanceId: INSTANCE_ID });
+if (!gotLock) {
+  console.log(`[Ternimal] instance '${INSTANCE_ID}' already running — exiting.`);
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 const INSTANCE = instanceIdentity(INSTANCE_ID, INSTANCE_COLOR);
 
 // 自签 relay 根证书（relay.caPath）：实例 userData 已定向后读取，
