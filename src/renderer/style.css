@@ -372,6 +372,9 @@ html, body {
 }
 
 /* 同码冲突横幅：occupied/parked 状态显示，金色警示 + 人工意图按钮 */
+.rs-conflict.rs-hidden {
+  display: none; /* 特异性必须压过下方 .rs-conflict{display:flex}（同等权重时后者胜） */
+}
 .rs-conflict {
   display: flex;
   align-items: center;
