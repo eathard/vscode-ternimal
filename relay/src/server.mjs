@@ -29,6 +29,16 @@ import { loadConfig, saveConfig } from './config.mjs';
 import { MemoryStore } from './store.mjs';
 import { encodeAccessToken, caFingerprint } from './token.mjs';
 
+/**
+ * 宿主（App RemoteServer）终局性关闭码 → 中继侧致命码翻译表。
+ * 见 splice() 内 hostWs 'close' 处理的注释（2026-09-12 重连风暴事故）。
+ * 宿主码表见 src/shared/wsProtocol.ts；中继码表见 protocol.mjs CLOSE。
+ */
+const HOST_FATAL_TO_RELAY = {
+  4002: 4002, // host RATE_LIMITED → relay RATE_LIMITED（致命）
+  4005: 4001, // host AUTH_DENIED → relay BAD_CODE（致命：凭据错误）
+};
+
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -456,17 +466,17 @@ export class RelayServer {
       ch, subCodeId: pending.subCodeId, clientWs, hostWs,
       clientAlive: true, hostAlive: true, closed: false, kill: null,
     };
-    const kill = (why, hard = false) => {
+    const kill = (why, hard = false, clientCode = 0) => {
       if (pipe.closed) return;
       pipe.closed = true;
       ch.pipes.delete(pipe);
       // 默认优雅 close（冲放在途帧后握手关闭）；背压/心跳丢失等异常路径用
       // terminate 立即切断
-      const end = (s) => {
+      const end = (s, code = 0) => {
         if (hard) { try { s.terminate(); } catch { /* gone */ } }
-        else { try { s.close(1000, why); } catch { try { s.terminate(); } catch { /* gone */ } } }
+        else { try { s.close(code || 1000, why); } catch { try { s.terminate(); } catch { /* gone */ } } }
       };
-      end(clientWs);
+      end(clientWs, clientCode);
       end(hostWs);
       this.info(`pipe closed (${why}) on ${ch.id.slice(0, 8)}… (${ch.pipes.size} active)`);
     };
@@ -514,7 +524,14 @@ export class RelayServer {
     clientWs.on('pong', () => { pipe.clientAlive = true; });
     hostWs.on('pong', () => { pipe.hostAlive = true; });
     clientWs.once('close', () => kill('client closed'));
-    hostWs.once('close', () => kill('host closed'));
+    // 宿主侧关闭码翻译（2026-09-12 排障）：宿主以 4xxx 终局性关闭（限速/
+    // 凭据拒绝）时，必须把「不可重试」语义透传给远端客户端——若一律按
+    // close(1000) 正常关闭，客户端视作瞬时故障无限重连；一个拿着过期令牌
+    // 的旧页面就能把宿主的共享中继鉴权窗口永久锁死，正确凭据也进不来。
+    // 宿主码表（wsProtocol）→ 中继码表（protocol CLOSE）：
+    //   4002 RATE_LIMITED → 4002（客户端致命：denied）
+    //   4005 AUTH_DENIED  → 4001（客户端致命：denied，凭据错误）
+    hostWs.once('close', (code) => kill('host closed', false, HOST_FATAL_TO_RELAY[code] || 0));
     clientWs.once('error', () => kill('client error'));
     hostWs.once('error', () => kill('host error'));
   }

@@ -75,6 +75,13 @@ export class WebSocketTransport implements TerminalTransport {
   private closedByUser = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Set once the host confirms auth (auth-ok). Gates the pre-auth
+   * reconnect cap: a client that never authenticated is failing on
+   * credentials/path, and retrying forever hammers the relay — 2026-09-12
+   * incident: a stale phone tab retried every ~10s with a rotated-out
+   * token, kept the host's shared relay-auth window locked, and valid
+   * clients were rejected too. */
+  private everAuthenticated = false;
   /** Relay gate state (LAN mode: always 'ready' once open). */
   private gateState: RelayGateState = 'connecting';
   private gateListeners: Array<(s: RelayGateState, detail: string) => void> = [];
@@ -342,6 +349,14 @@ export class WebSocketTransport implements TerminalTransport {
 
   private scheduleReconnect(): void {
     if (this.closedByUser || this.reconnectTimer !== null) return;
+    if (this.relay && !this.everAuthenticated && this.reconnectAttempt >= 8) {
+      // Pre-auth storm cap (relay mode): every attempt failed before the
+      // host confirmed auth — stale credentials or a wedged path. Stop and
+      // surface; the operator gets a fresh link instead of the client
+      // locking the shared relay-auth window for everyone.
+      this.setGate('denied', 'auth retry cap');
+      return;
+    }
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempt, RECONNECT_MAX_MS);
     this.reconnectAttempt++;
     console.warn(`[Ternimal] WS disconnected; reconnecting in ${delay}ms`);
@@ -407,6 +422,7 @@ export class WebSocketTransport implements TerminalTransport {
 
   /** R-M3 relay mode ready 路径（R-M4-B: 密钥激活后走加密出站）。 */
   private relayAuthOk(): void {
+    this.everAuthenticated = true;
     this.setGate('ready');
     if (this.outbox.length) {
       const queued = this.outbox.splice(0);

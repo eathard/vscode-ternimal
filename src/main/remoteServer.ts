@@ -178,9 +178,20 @@ export class RemoteServer {
       const remote = req.socket.remoteAddress ?? '';
       const isLoopback =
         remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
-      if (this.allowRelayFirstFrameAuth && isLoopback && !this.auth.isRelayLocked()) {
+      if (this.allowRelayFirstFrameAuth && isLoopback) {
+        // Complete the upgrade even while the relay-auth window is locked,
+        // then close with RATE_LIMITED (4002). An HTTP 401 here aborts the
+        // plugin's pipe as an opaque socket error — the relay could only
+        // relay-side-close the phone with 1000, web clients treated it as
+        // transient and retried forever, which re-armed the lock (2026-09-12
+        // incident: one stale tab with a rotated-out token wedged the shared
+        // relay window so valid clients were rejected too).
+        const locked = this.auth.isRelayLocked();
         this.wss!.handleUpgrade(req, socket, head, (ws) => {
-          this.registerClient(ws, true);
+          const client = this.registerClient(ws, true);
+          if (locked) {
+            this.failWith(client, WS.ERROR_CODES.RATE_LIMITED, 'relay auth locked');
+          }
         });
         return;
       }
@@ -339,7 +350,7 @@ export class RemoteServer {
 
   // ---------- WS wiring ----------
 
-  private registerClient(ws: WebSocket, pendingAuth: boolean): void {
+  private registerClient(ws: WebSocket, pendingAuth: boolean): ClientState {
     const client: ClientState = {
       ws,
       attached: new Set(),
@@ -382,11 +393,12 @@ export class RemoteServer {
       client.authDeadline = setTimeout(() => {
         this.failWith(client, WS.ERROR_CODES.AUTH_REQUIRED, 'auth timeout');
       }, WS.RELAY_AUTH_TIMEOUT_MS);
-      return;
+      return client;
     }
 
     // Zero-latency bootstrap: push the current tab list immediately.
     this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
+    return client;
   }
 
   private handleClientMessage(client: ClientState, raw: string): void {
