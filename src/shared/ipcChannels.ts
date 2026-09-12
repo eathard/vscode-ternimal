@@ -27,6 +27,7 @@ export const IPC = {
   RELAY_ON_STATUS: 'relay:onStatus',
   RELAY_SHARE_LINK: 'relay:shareLink',
   RELAY_LIST_SUBCODES: 'relay:listSubcodes',
+  RELAY_VIEW_SUBCODE: 'relay:viewSubcode',
   RELAY_REVOKE_SUBCODE: 'relay:revokeSubcode',
   RELAY_RENEW_SUBCODE: 'relay:renewSubcode',
   RELAY_FORCE_REGISTER: 'relay:forceRegister',
@@ -85,6 +86,13 @@ export interface RelayShareLink {
   url: string;
   subCode: string;
   expiresAt: number;
+}
+
+/** View-an-existing-subcode result: share URL + QR (renderer modal). */
+export interface RelaySubcodeView {
+  url: string;
+  /** data:image/png;base64 — empty string when QR generation failed. */
+  qrDataUrl: string;
 }
 
 export interface RelaySubcodeInfo {

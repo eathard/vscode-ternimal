@@ -10,6 +10,7 @@ import type {
   RelayStatusEvent,
   RelayShareLink,
   RelaySubcodeInfo,
+  RelaySubcodeView,
 } from '../../shared/ipcChannels';
 import type { TerminalTransport, Unsubscribe } from './transport';
 
@@ -34,6 +35,7 @@ declare global {
       relayApplySettings: (patch: Partial<RelaySettingsDto>) => Promise<RelaySettingsDto>;
       relayShareLink: (label?: string, ttlHours?: number) => Promise<RelayShareLink>;
       relayListSubcodes: () => Promise<RelaySubcodeInfo[]>;
+      relayViewSubcode: (id: string) => Promise<RelaySubcodeView>;
       relayRevokeSubcode: (id: string, purge?: boolean) => Promise<void>;
       relayRenewSubcode: (id: string, opts: { days?: number; permanent?: boolean }) => Promise<number | null>;
       relayForceRegister: () => Promise<void>;

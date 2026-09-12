@@ -295,6 +295,28 @@ html, body {
 .rs-sub-exp { color: #9a9a9a; font-size: 11px; flex: 1; }
 .rs-empty { color: #6a6a6a; font-size: 12px; }
 
+/* view 弹窗：子码访问信息（二维码 + 可复制链接） */
+.rs-view-mask {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.rs-view-card {
+  background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
+  padding: 18px 20px; max-width: 400px; width: calc(100vw - 48px);
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+.rs-view-title { color: #e8e8e8; font-size: 14px; font-weight: 600; }
+.rs-view-qr { width: 240px; height: 240px; border-radius: 6px; background: #fff; padding: 6px; }
+.rs-view-url {
+  font-family: ui-monospace, monospace; font-size: 11px; color: #9cdcfe;
+  word-break: break-all; white-space: pre-wrap; text-align: center; user-select: all;
+}
+.rs-view-tip { color: #9a9a9a; font-size: 11px; text-align: center; }
+.rs-view-bar { display: flex; gap: 8px; }
+.rs-view-err { color: #f48771; font-size: 12px; padding: 12px 0; }
+
 .rs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .rs-button {
   background: #2a2a2a; color: #d4d4d4; border: 1px solid #3c3c3c;

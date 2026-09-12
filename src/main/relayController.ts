@@ -19,8 +19,10 @@ import {
   RelayStatusEvent,
   RelayShareLink,
   RelaySubcodeInfo,
+  RelaySubcodeView,
   RelayTokenPreview,
 } from '../shared/ipcChannels';
+import QRCode from 'qrcode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { decodeRelayToken, relayCaFingerprint } from './relayToken';
@@ -197,6 +199,32 @@ export class RelayController {
     return (await this.host.listSubCodes()) as RelaySubcodeInfo[];
   }
 
+  /** 查看已签发子码：组装分享 URL（含本次启动令牌）+ 二维码。
+   * 与 shareLink() 的区别：不铸造新子码，用于设置页 view 按钮回看。 */
+  async viewSubCode(id: string): Promise<RelaySubcodeView> {
+    if (this.host.currentState !== 'registered') {
+      throw new Error('relay plugin not registered');
+    }
+    const subs = await this.listSubCodes();
+    const sub = subs.find((s) => s.id === id);
+    if (!sub || sub.revoked) {
+      throw new Error('subcode not available');
+    }
+    const eff = this.effective();
+    const url = `${eff.url.replace(/\/+$/, '')}/#S=${sub.code}&T=${encodeURIComponent(this.deps.auth.getToken())}`;
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(url, {
+        width: 320,
+        margin: 2,
+        color: { dark: '#1e1e1e', light: '#ffffff' },
+      });
+    } catch {
+      // QR 失败不阻断文字链接展示（与托盘信息窗同一策略）
+    }
+    return { url, qrDataUrl };
+  }
+
   async revokeSubCode(id: string, opts: { purge?: boolean } = {}): Promise<void> {
     await this.host.revokeSubCode(id, opts);
   }
@@ -260,6 +288,7 @@ export class RelayController {
       this.shareLink(label, ttlHours)
     );
     ipcMain.handle(IPC.RELAY_LIST_SUBCODES, () => this.listSubCodes());
+    ipcMain.handle(IPC.RELAY_VIEW_SUBCODE, (_e, id: string) => this.viewSubCode(id));
     ipcMain.handle(IPC.RELAY_REVOKE_SUBCODE, (_e, id: string, purge?: boolean) =>
       this.revokeSubCode(id, { purge: purge === true })
     );
@@ -277,6 +306,7 @@ export class RelayController {
       IPC.RELAY_APPLY_SETTINGS,
       IPC.RELAY_SHARE_LINK,
       IPC.RELAY_LIST_SUBCODES,
+      IPC.RELAY_VIEW_SUBCODE,
       IPC.RELAY_REVOKE_SUBCODE,
       IPC.RELAY_RENEW_SUBCODE,
       IPC.RELAY_FORCE_REGISTER,

@@ -452,6 +452,12 @@ async function refreshSubcodes(): Promise<void> {
         void window.electronAPI.relayRevokeSubcode(sub.id, sub.revoked).then(refreshSubcodes);
       });
       row.appendChild(action);
+      // 查看访问信息（view）：吊销按钮右侧 —— 二维码 + 可复制分享链接
+      if (!sub.revoked) {
+        const view = el('button', 'rs-button rs-small', t(locale, 'settings.relay.view'));
+        view.addEventListener('click', () => void showSubcodeView(sub));
+        row.appendChild(view);
+      }
       list.appendChild(row);
     }
   } catch {
@@ -459,4 +465,55 @@ async function refreshSubcodes(): Promise<void> {
     list.textContent = '';
     list.appendChild(el('div', 'rs-empty', t(locale, 'settings.relay.noSubcodes')));
   }
+}
+
+/** view 弹窗：二维码 + 分享链接 + 复制按钮（点击遮罩关闭）。 */
+async function showSubcodeView(sub: RelaySubcodeInfo): Promise<void> {
+  document.querySelector('.rs-view-mask')?.remove();
+  const mask = el('div', 'rs-view-mask');
+  const card = el('div', 'rs-view-card');
+  let data: { url: string; qrDataUrl: string } | null = null;
+  try {
+    data = await window.electronAPI.relayViewSubcode(sub.id);
+  } catch {
+    /* 落到错误文案 */
+  }
+  if (!data) {
+    card.appendChild(el('div', 'rs-view-err', t(locale, 'settings.relay.notRegistered')));
+    mask.appendChild(card);
+    mask.addEventListener('click', () => mask.remove());
+    document.body.appendChild(mask);
+    return;
+  }
+  card.appendChild(el('div', 'rs-view-title', t(locale, 'settings.relay.viewTitle')));
+  if (data.qrDataUrl) {
+    const img = document.createElement('img');
+    img.className = 'rs-view-qr';
+    img.alt = 'QR';
+    img.src = data.qrDataUrl;
+    card.appendChild(img);
+  }
+  const code = el('code', 'rs-view-url', data.url);
+  card.appendChild(code);
+  const tip = el('div', 'rs-view-tip', t(locale, 'settings.relay.shareTip'));
+  card.appendChild(tip);
+  const bar = el('div', 'rs-view-bar');
+  const copy = el('button', 'rs-button rs-small', t(locale, 'settings.relay.copyLink'));
+  copy.addEventListener('click', () => {
+    window.electronAPI.clipboardWrite(data!.url);
+    copy.textContent = t(locale, 'settings.relay.copied');
+    setTimeout(() => {
+      copy.textContent = t(locale, 'settings.relay.copyLink');
+    }, 1500);
+  });
+  bar.appendChild(copy);
+  const close = el('button', 'rs-button rs-small', t(locale, 'settings.relay.close'));
+  close.addEventListener('click', () => mask.remove());
+  bar.appendChild(close);
+  card.appendChild(bar);
+  // 点卡片外部关闭；卡片内点击不冒泡关闭
+  mask.addEventListener('click', () => mask.remove());
+  card.addEventListener('click', (e) => e.stopPropagation());
+  mask.appendChild(card);
+  document.body.appendChild(mask);
 }

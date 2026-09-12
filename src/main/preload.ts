@@ -73,6 +73,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   relayListSubcodes: () => {
     return ipcRenderer.invoke(IPC.RELAY_LIST_SUBCODES);
   },
+  relayViewSubcode: (id: string) => {
+    return ipcRenderer.invoke(IPC.RELAY_VIEW_SUBCODE, id);
+  },
   relayRevokeSubcode: (id: string, purge?: boolean) => {
     return ipcRenderer.invoke(IPC.RELAY_REVOKE_SUBCODE, id, purge);
   },
