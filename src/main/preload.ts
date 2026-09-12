@@ -96,6 +96,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(IPC.RELAY_ON_STATUS, handler);
     return () => ipcRenderer.removeListener(IPC.RELAY_ON_STATUS, handler);
   },
+  // B+ 几何所有权：聚焦上报（renderer→main）+ 所有权广播（main→renderer）
+  geoFocus: (focused: boolean) => {
+    ipcRenderer.send(IPC.GEO_FOCUS, focused);
+  },
+  onGeoOwnership: (callback: (payload: { id: string; owner: string }) => void) => {
+    const listener = (_e: unknown, payload: { id: string; owner: string }) => callback(payload);
+    ipcRenderer.on(IPC.GEO_ON_OWNERSHIP, listener);
+    return () => ipcRenderer.removeListener(IPC.GEO_ON_OWNERSHIP, listener);
+  },
   clipboardWrite: (text: string) => {
     clipboard.writeText(text);
   },

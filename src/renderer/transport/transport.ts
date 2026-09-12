@@ -55,4 +55,14 @@ export interface TerminalTransport {
   onExit(cb: (payload: ExitPayload) => void): Unsubscribe;
   onTitle(cb: (payload: TitlePayload) => void): Unsubscribe;
   onAttached(cb: (payload: AttachedPayload) => void): Unsubscribe;
+
+  // B+ 几何所有权流动（web 端有意义；本地 IPC 实现可缺省）
+  /** 申请会话几何所有权（force = 手动 chip）。 */
+  claimGeometry?(id: string, force?: boolean): void;
+  /** 释放会话几何所有权（失焦/隐藏）。 */
+  releaseGeometry?(id: string): void;
+  /** 所有权变化广播（owner = 'local' | 本连接 clientId | 其他 clientId）。 */
+  onGeoOwnership?(cb: (payload: { id: string; owner: string }) => void): Unsubscribe;
+  /** 本连接 clientId（auth-ok 下发；用于与 owner 比对）。 */
+  readonly geoClientId?: string;
 }

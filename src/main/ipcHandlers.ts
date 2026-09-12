@@ -6,6 +6,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { SessionRegistry } from './sessionRegistry';
 import type { InstanceIdentity } from './instanceIdentity';
+import type { RemoteServer } from './remoteServer';
 import {
   IPC,
   SpawnRequest,
@@ -13,6 +14,12 @@ import {
   ResizePayload,
   KillPayload,
 } from '../shared/ipcChannels';
+
+/** B+：remoteServer 在 main.ts 启动后注入（几何所有权仲裁）。 */
+let remoteServerRef: RemoteServer | null = null;
+export function setRemoteServerForGeo(rs: RemoteServer | null): void {
+  remoteServerRef = rs;
+}
 
 export function registerIpcHandlers(
   registry: SessionRegistry,
@@ -48,8 +55,16 @@ export function registerIpcHandlers(
   });
 
   // Resize a session (debounced + last-writer-wins inside the registry)
+  // B+：本地 resize 经过 remoteServer 仲裁 —— web 持有几何时，本地 resize
+  // 视为桌面注意力，先夺回所有权再放行（noteLocalResize 内部广播）。
   ipcMain.on(IPC.PTY_RESIZE, (_event, payload: ResizePayload) => {
+    remoteServerRef?.noteLocalResize(payload.id);
     registry.resize(payload.id, payload.cols, payload.rows);
+  });
+
+  // B+：渲染进程上报窗口聚焦态；聚焦即夺回被 web 持有的会话几何。
+  ipcMain.on(IPC.GEO_FOCUS, (_event, focused: boolean) => {
+    remoteServerRef?.setLocalGeoFocus(focused === true);
   });
 
   // Kill a session

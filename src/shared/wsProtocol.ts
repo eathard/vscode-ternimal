@@ -57,6 +57,26 @@ export interface WsResizeMsg {
   rows: number;
 }
 
+// ---------- B+ 几何所有权流动（geoArbiter） ----------
+
+export interface WsGeoClaimMsg {
+  /** web→server：申请该会话的几何所有权（force = 手动 chip，豁免驻留/聚焦检查）。 */
+  type: 'geo-claim';
+  id: string;
+  force?: 1;
+}
+export interface WsGeoReleaseMsg {
+  /** web→server：主动释放（失焦/隐藏）。 */
+  type: 'geo-release';
+  id: string;
+}
+export interface WsGeoOwnershipMsg {
+  /** server→all：所有权变化广播。owner = 'local' | ws clientId。 */
+  type: 'geo-ownership';
+  id: string;
+  owner: string;
+}
+
 export interface WsJoinAuthMsg {
   /** WBS-R2-C: first-frame auth for relay/loopback connections (no cookie).
    * R-M4-A 起 relay 路径不再接受明文 auth（改挑战应答）；类型保留仅为
@@ -91,7 +111,9 @@ export type ClientMessage =
   | WsResizeMsg
   | WsJoinAuthMsg
   | WsAuthResponseMsg
-  | WsSecureMsg;
+  | WsSecureMsg
+  | WsGeoClaimMsg
+  | WsGeoReleaseMsg;
 
 // ---------- server → client ----------
 
@@ -133,6 +155,8 @@ export interface WsAuthOkMsg {
   type: 'auth-ok';
   /** R-M4-B：host 已启用 E2E 加密——此后双向业务帧均为 secure 信封。 */
   enc?: 1;
+  /** B+：本连接的客户端 id（几何所有权广播对端用它与 own 比对）。 */
+  clientId?: string;
 }
 
 export interface WsAuthChallengeMsg {
@@ -151,7 +175,8 @@ export type ServerMessage =
   | WsErrorMsg
   | WsAuthOkMsg
   | WsAuthChallengeMsg
-  | WsSecureMsg;
+  | WsSecureMsg
+  | WsGeoOwnershipMsg;
 
 // ---------- (de)serialization with strict shape validation ----------
 
@@ -187,7 +212,12 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'close':
     case 'attach':
     case 'detach':
+    case 'geo-release':
       return typeof m.id === 'string' ? ({ type: m.type, id: m.id } as ClientMessage) : null;
+    case 'geo-claim':
+      return typeof m.id === 'string'
+        ? { type: 'geo-claim', id: m.id, ...(m.force === 1 ? { force: 1 as const } : {}) }
+        : null;
     case 'auth':
       return typeof m.token === 'string'
         ? { type: 'auth', token: m.token }

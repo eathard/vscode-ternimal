@@ -367,8 +367,13 @@ test('bootstrap: authenticated ws connect receives initial tabs', async () => {
   cleanups.push(() => server.stop());
   const token = await loginOk(port);
   const { messages } = await connect(url, token);
+  // B+：引导首帧 = auth-ok（携带本连接 clientId，几何所有权比对用），
+  // 随后才是 tabs 快照。
+  await waitFor(messages, (m) => m.type === 'auth-ok', 'auth-ok with clientId');
+  assert.ok(typeof messages[0].clientId === 'string' && messages[0].clientId, 'clientId present');
   await waitFor(messages, (m) => m.type === 'tabs', 'initial tabs');
-  assert.equal(messages[0].tabs.length, 0);
+  const tabsMsg = messages.find((m) => m.type === 'tabs');
+  assert.equal(tabsMsg.tabs.length, 0);
 });
 
 test('create → tabs broadcast; attach → attached; live data; replay for late joiner (M2-F)', async () => {

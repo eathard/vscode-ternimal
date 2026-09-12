@@ -42,11 +42,18 @@ declare global {
       relayPreviewToken: (token: string) => Promise<RelayTokenPreview>;
       relayApplyToken: (token: string) => Promise<RelaySettingsDto>;
       onRelayStatus: (callback: (status: RelayStatusEvent) => void) => () => void;
+      // B+ 几何所有权（Electron 窗口）
+      geoFocus: (focused: boolean) => void;
+      onGeoOwnership: (callback: (payload: { id: string; owner: string }) => void) => () => void;
     };
   }
 }
 
 export class LocalIpcTransport implements TerminalTransport {
+  /** B+：本地窗口在几何所有权协议里的对端 id 就是 'local'
+   * （web 端 = auth-ok 下发的连接 id —— 两端用同一规则 owner===geoClientId）。 */
+  readonly geoClientId = 'local';
+
   listTabs(): Promise<SessionInfo[]> {
     return window.electronAPI.tabsList();
   }

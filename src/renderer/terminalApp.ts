@@ -27,6 +27,8 @@ export class TerminalApp {
   /** Session ids created by THIS client — they keep geometry ownership. */
   private createdHere = new Set<string>();
   private activeTabId: string | null = null;
+  /** B+：最近一次 tabs 广播（跟随渲染取会话当前尺寸用）。 */
+  private lastTabs: SessionInfo[] | null = null;
   private tabBar: TabBar;
   private searchBar: SearchBar;
   private themeManager: ThemeManager;
@@ -107,6 +109,31 @@ export class TerminalApp {
     // made by remote clients surface here too).
     transport.onTabsChange((tabs) => this.reconcileTabs(tabs));
 
+    // B+ 几何所有权流动：
+    //  - web 端：服务端广播 owner（'local' | 自己 | 其他）→ 切换本端
+    //    原生/跟随渲染（尺寸变化经由 tabs 广播走 applyFollowGeometry）。
+    //  - Electron 端：owner!=='local' 时本地转为跟随（固定网格），
+    //    owner==='local' 恢复原生 fit+resize。
+    if (transport.onGeoOwnership) {
+      transport.onGeoOwnership((e) => this.applyServerGeometry(e.id, e.owner));
+    }
+
+    // Electron 窗口：聚焦态上报（服务端据此放行手机端自动接管申请，
+    // 聚焦即夺回）。web 端无此通道 —— 手机端的「注意力」就是页面可见+聚焦。
+    const api = (window as { electronAPI?: { geoFocus?: (f: boolean) => void; onGeoOwnership?: (cb: (p: { id: string; owner: string }) => void) => () => void } }).electronAPI;
+    if (api?.geoFocus) {
+      const report = (): void => api.geoFocus?.(document.hasFocus());
+      window.addEventListener('focus', report);
+      window.addEventListener('blur', report);
+      report();
+      // 窗口关闭前避免误报聚焦
+      window.addEventListener('beforeunload', () => api.geoFocus?.(false));
+    }
+    // Electron 端 geo 广播不经 transport（无 ws）——IPC 直连。
+    if (api?.onGeoOwnership && !transport.onGeoOwnership) {
+      api.onGeoOwnership((e) => this.applyServerGeometry(e.id, e.owner));
+    }
+
     // Restore existing sessions, or create the initial tab on first boot.
     this.init().catch((err) => console.error('[Ternimal] init failed:', err));
   }
@@ -159,6 +186,26 @@ export class TerminalApp {
   /** Current geometry-ownership state of a tab (chip UI reads this). */
   isGeometryOwner(id: string): boolean {
     return this.tabs.get(id)?.geometryOwner ?? true;
+  }
+
+  /**
+   * B+：服务端所有权广播落地。mine = 本端持有（原生几何）；
+   * 其余一律跟随（固定网格渲染，尺寸随 tabs 广播更新）。
+   */
+  applyServerGeometry(id: string, owner: string): void {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    const transport = getTransport();
+    // 本地窗口 geoClientId='local'；web 端 = auth-ok 下发的连接 id。
+    // 两端同一规则：owner === 自己的 id 才是原生几何持有方。
+    const mine = owner === transport.geoClientId;
+    if (mine === tab.geometryOwner) return;
+    tab.setGeometryOwner(mine);
+    if (!mine) {
+      // 跟随渲染：固定到会话当前尺寸（后续 tabs 广播继续校正）。
+      const info = this.lastTabs?.find((s) => s.id === id);
+      if (info) tab.applyFollowGeometry(info.cols, info.rows);
+    }
   }
 
   private effectiveOwner(id: string): boolean {
@@ -231,6 +278,7 @@ export class TerminalApp {
 
   /** Bring local tab state in line with server truth. */
   private reconcileTabs(tabs: SessionInfo[]): void {
+    this.lastTabs = tabs;
     const serverIds = new Set(tabs.map((t) => t.id));
 
     // Drop local tabs whose session is gone (remote close / natural exit
@@ -253,8 +301,12 @@ export class TerminalApp {
     }
   }
 
+  /** B+：活跃标签变化回调（web 自动接管在新标签上重新申请所有权）。 */
+  onTabActivated: ((id: string) => void) | null = null;
+
   switchTab(id: string): void {
     if (!this.tabs.has(id)) return;
+    if (id !== this.activeTabId) this.onTabActivated?.(id);
 
     // Pending soft-key combos never survive a tab switch (one-shot
     // semantics belong to the tab the user is looking at).

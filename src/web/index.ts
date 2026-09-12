@@ -8,7 +8,7 @@
 // otherwise the original LAN cookie flow is untouched.
 import '../renderer/style.css';
 import '@xterm/xterm/css/xterm.css';
-import { setTransport } from '../renderer/transport';
+import { setTransport, getTransport } from '../renderer/transport';
 import { WebSocketTransport } from '../renderer/transport/webSocketTransport';
 import { TerminalApp } from '../renderer/terminalApp';
 import { mountSoftKeys } from './softKeys';
@@ -97,6 +97,10 @@ function mountApp(root: HTMLElement): TerminalApp {
     // client creates still own theirs; per-tab opt-in via the adapt chip.
     app.setFollowMode(true);
     mountAdaptChip(app, locale);
+    // B+ 所有权流动：页面可见+聚焦时自动申请当前活跃标签的几何所有权
+    // （服务端规则：桌面未聚焦才放行；5s 防乒乓；chip=force）。
+    // 失焦/隐藏 → 释放，桌面回到原生尺寸。
+    wireAutoAdapt(app);
     return app;
   } catch (err) {
     console.error('[Ternimal/Web] Failed to create TerminalApp:', err);
@@ -104,6 +108,51 @@ function mountApp(root: HTMLElement): TerminalApp {
       '<pre style="color:red;padding:20px;">Error: ' + err + '</pre>';
     throw err;
   }
+}
+
+/** B+：web 端自动接管/释放（注意力 = 页面可见且聚焦 + 活跃标签）。 */
+function wireAutoAdapt(app: TerminalApp): void {
+  const transport = getTransport() as WebSocketTransport;
+  if (!transport.claimGeometry || !transport.releaseGeometry) return;
+  let claimedId: string | null = null;
+
+  const attentive = (): boolean =>
+    document.visibilityState === 'visible' && document.hasFocus();
+
+  const claimActive = (): void => {
+    if (!attentive()) return;
+    const id = app.getActiveTabId();
+    if (id) transport.claimGeometry?.(id); // 非 force：服务端裁定
+  };
+  const releaseClaimed = (): void => {
+    if (claimedId) transport.releaseGeometry?.(claimedId);
+  };
+
+  // 服务端广播维护 claimedId（own 才算持有；被拒/被夺回即清）
+  transport.onGeoOwnership?.((e) => {
+    if (e.owner === transport.geoClientId) claimedId = e.id;
+    else if (e.id === claimedId) claimedId = null;
+  });
+
+  window.addEventListener('focus', claimActive);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') claimActive();
+    else releaseClaimed();
+  });
+  // 兜底重试：窗口经 WM 激活但页面本已持焦时不会再生 focus 事件——
+  // 专注且未持有时每 3s 重发申请（服务端裁定，幂等无害）。
+  setInterval(() => {
+    const id = app.getActiveTabId();
+    if (id && !app.isGeometryOwner(id)) claimActive();
+  }, 3000);
+  window.addEventListener('blur', releaseClaimed);
+  window.addEventListener('pagehide', releaseClaimed);
+  // 标签切换：释放旧的，在新活跃标签上重新申请。
+  app.onTabActivated = () => {
+    releaseClaimed();
+    claimedId = null;
+    claimActive();
+  };
 }
 
 /**
@@ -130,8 +179,12 @@ function mountAdaptChip(app: TerminalApp, locale: ReturnType<typeof detectLocale
     chip.title = t(locale, 'web.adapt.hint');
   };
   chip.addEventListener('click', () => {
-    app.toggleAdapt(null);
-    refresh();
+    // B+：chip = 手动强制接管/释放（豁免驻留与桌面聚焦检查）。
+    const id = app.getActiveTabId();
+    if (!id) return;
+    const transport = getTransport() as WebSocketTransport;
+    if (app.isGeometryOwner(id)) transport.releaseGeometry?.(id);
+    else transport.claimGeometry?.(id, true);
   });
   document.body.appendChild(chip);
   // 初次挂载 + 每次标签切换后刷新

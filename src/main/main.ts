@@ -2,7 +2,8 @@ import { app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import { SessionRegistry } from './sessionRegistry';
 import { RemoteServer } from './remoteServer';
-import { registerIpcHandlers, unregisterIpcHandlers } from './ipcHandlers';
+import { registerIpcHandlers, unregisterIpcHandlers, setRemoteServerForGeo } from './ipcHandlers';
+import { IPC } from '../shared/ipcChannels';
 import { ConfigStore } from './configStore';
 import { ensureCertificate } from './certManager';
 import { AuthManager } from './authManager';
@@ -186,6 +187,14 @@ async function startRemoteServer(portOverride?: number): Promise<void> {
 
   // IPC handlers exactly once, with a lazy window accessor (M4 reopen safe).
   registerIpcHandlers(registry, () => mainWindow, INSTANCE);
+
+  // B+ 几何所有权流动：geo-ownership 广播转发到本地渲染进程，
+  // 并把 remoteServer 交给 ipcHandlers（聚焦上报/本地 resize 夺回）。
+  remoteServer.setGeoLocalBroadcast((msg) => {
+    const win = mainWindow;
+    if (win && !win.isDestroyed()) win.webContents.send(IPC.GEO_ON_OWNERSHIP, msg);
+  });
+  setRemoteServerForGeo(remoteServer);
 
   // The access URL (token in the fragment) is logged once per launch.
   console.warn(`[Ternimal] access URL: https://${host === '0.0.0.0' ? lanIpForLog() : host}:${remoteServer.getPort()}/#T=${auth.getToken()}`);

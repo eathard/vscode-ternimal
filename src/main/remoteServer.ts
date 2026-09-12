@@ -36,7 +36,9 @@ import {
   type WsErrorMsg,
   type WsAuthOkMsg,
   type WsAuthChallengeMsg,
+  type WsGeoOwnershipMsg,
 } from '../shared/wsProtocol';
+import { GeoArbiter } from './geoArbiter';
 import { sealFrame, openFrame } from '../shared/e2ee';
 
 export interface RemoteServerOptions {
@@ -68,6 +70,8 @@ export interface RemoteServerOptions {
 }
 
 interface ClientState {
+  /** B+：本连接的稳定 id（几何所有权广播的对端标识）。 */
+  id: string;
   ws: WebSocket;
   attached: Set<string>;
   sawPong: boolean;
@@ -110,6 +114,10 @@ export class RemoteServer {
   private server: https.Server | null = null;
   private wss: WebSocketServer | null = null;
   private clients: Set<ClientState> = new Set();
+  /** B+ 几何所有权仲裁（'local' = Electron 窗口）。 */
+  readonly geo = new GeoArbiter();
+  private nextClientId = 1;
+  private geoLocalBroadcast: ((msg: WsGeoOwnershipMsg) => void) | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private unsubscribeRegistry: (() => void)[] = [];
   private actualPort = 0;
@@ -352,6 +360,7 @@ export class RemoteServer {
 
   private registerClient(ws: WebSocket, pendingAuth: boolean): ClientState {
     const client: ClientState = {
+      id: `gc-${this.nextClientId++}`,
       ws,
       attached: new Set(),
       sawPong: true,
@@ -374,10 +383,17 @@ export class RemoteServer {
     ws.on('close', () => {
       if (client.authDeadline) clearTimeout(client.authDeadline);
       this.clients.delete(client);
+      // B+：断开的 web 持有者释放所有权，桌面端回到原生尺寸。
+      for (const { id } of this.geo.dropClient(client.id)) {
+        this.broadcastGeo(id);
+      }
     });
     ws.on('error', () => {
       if (client.authDeadline) clearTimeout(client.authDeadline);
       this.clients.delete(client);
+      for (const { id } of this.geo.dropClient(client.id)) {
+        this.broadcastGeo(id);
+      }
       try {
         ws.terminate();
       } catch {
@@ -397,6 +413,8 @@ export class RemoteServer {
     }
 
     // Zero-latency bootstrap: push the current tab list immediately.
+    // B+：cookie 认证路径同样下发 clientId（web 端对 geo-ownership 广播比对 own）。
+    this.sendTo(client, { type: 'auth-ok', clientId: client.id } as WsAuthOkMsg);
     this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
     return client;
   }
@@ -481,7 +499,7 @@ export class RemoteServer {
             .deriveRelaySessionKey(nonce)
             .then((key) => {
               client.e2eeKey = key;
-              this.sendTo(client, { type: 'auth-ok', enc: 1 } as WsAuthOkMsg);
+              this.sendTo(client, { type: 'auth-ok', enc: 1, clientId: client.id } as WsAuthOkMsg);
               this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
             })
             .catch(() => {
@@ -489,7 +507,7 @@ export class RemoteServer {
             });
           return;
         }
-        this.sendTo(client, { type: 'auth-ok' } as WsAuthOkMsg);
+        this.sendTo(client, { type: 'auth-ok', clientId: client.id } as WsAuthOkMsg);
         this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
         return;
       }
@@ -506,7 +524,10 @@ export class RemoteServer {
           return;
         }
         try {
-          this.registry.create({ cols: 80, rows: 24, shell: msg.shell, cwd: msg.cwd });
+          const info = this.registry.create({ cols: 80, rows: 24, shell: msg.shell, cwd: msg.cwd });
+          // B+：web 创建的会话，创建端即时持有几何所有权（随后首个 resize
+          // 落地即同步本端尺寸）。失败不影响会话本身。
+          this.geo.claim(info.id, client.id, { force: true });
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error(`[RS:debug] create THREW:`, (err as Error).stack ?? err);
@@ -556,9 +577,54 @@ export class RemoteServer {
         }
         return;
       case 'resize':
-        this.registry.resize(msg.id, msg.cols, msg.rows);
+        // B+：只有几何所有者可以 resize（防止双端适配互踩 —— 花屏根因）。
+        // 非 owner 的 web 客户端静默忽略：它应当走 geo-claim。
+        if (this.geo.getOwner(msg.id) === client.id) {
+          this.registry.resize(msg.id, msg.cols, msg.rows);
+        }
         return;
+      case 'geo-claim': {
+        // B+ 所有权流动：非 force 申请须满足「桌面未聚焦 + 5s 驻留」。
+        const res = this.geo.claim(msg.id, client.id, { force: msg.force === 1 });
+        if (res.changed) this.broadcastGeo(msg.id);
+        return;
+      }
+      case 'geo-release': {
+        const res = this.geo.release(msg.id, client.id);
+        if (res.changed) this.broadcastGeo(msg.id);
+        return;
+      }
     }
+  }
+
+  /** B+：本地（Electron 窗口）上报聚焦态；聚焦即夺回全部 web 持有的会话。 */
+  setLocalGeoFocus(focused: boolean): void {
+    for (const { id } of this.geo.setLocalFocus(focused)) {
+      this.broadcastGeo(id);
+    }
+  }
+
+  /** B+：本地 resize 入口（ipcHandlers PTY_RESIZE 先经过这里）。
+   * 非 local 持有时的本地 resize = 桌面注意力 → 强制夺回再放行。 */
+  noteLocalResize(id: string): boolean {
+    if (this.geo.getOwner(id) === 'local') return false; // 无变化，正常放行
+    const res = this.geo.claim(id, 'local', { force: true });
+    if (res.changed) this.broadcastGeo(id);
+    return true;
+  }
+
+  /** B+：向全部在线客户端 + 本地渲染进程广播所有权。 */
+  private broadcastGeo(id: string): void {
+    const msg: WsGeoOwnershipMsg = { type: 'geo-ownership', id, owner: this.geo.getOwner(id) };
+    for (const client of this.clients) {
+      if (client.attached.has(id)) this.sendTo(client, msg);
+    }
+    this.geoLocalBroadcast?.(msg);
+  }
+
+  /** main.ts 接线：geo-ownership 转发到 Electron 渲染进程（IPC）。 */
+  setGeoLocalBroadcast(fn: ((msg: WsGeoOwnershipMsg) => void) | null): void {
+    this.geoLocalBroadcast = fn;
   }
 
   private failWith(client: ClientState, code: number, message: string): void {
@@ -606,6 +672,7 @@ export class RemoteServer {
     });
 
     on('exit', (payload: ExitPayload) => {
+      this.geo.forget(payload.id); // B+：会话消失，所有权状态一并清理
       const msg: WsExitMsg = { type: 'exit', id: payload.id, exitCode: payload.exitCode };
       for (const client of this.clients) {
         if (client.attached.has(payload.id)) {

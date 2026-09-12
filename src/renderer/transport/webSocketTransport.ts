@@ -31,6 +31,7 @@ type ListenerBag = {
   exit: Array<(p: ExitPayload) => void>;
   title: Array<(p: TitlePayload) => void>;
   attached: Array<(p: AttachedPayload) => void>;
+  geo: Array<(p: { id: string; owner: string }) => void>;
 };
 
 export type RelayGateState =
@@ -91,7 +92,7 @@ export class WebSocketTransport implements TerminalTransport {
   /** Latest tab list (lets late UI subscribers render immediately). */
   private lastTabs: SessionInfo[] = [];
   private knownIds = new Set<string>();
-  private listeners: ListenerBag = { tabs: [], data: [], exit: [], title: [], attached: [] };
+  private listeners: ListenerBag = { tabs: [], data: [], exit: [], title: [], attached: [], geo: [] };
   private waitersForTabs: Array<(tabs: SessionInfo[]) => void> = [];
   /** Messages sent while offline; flushed the moment the socket opens. */
   private outbox: string[] = [];
@@ -227,6 +228,29 @@ export class WebSocketTransport implements TerminalTransport {
 
   resize(id: string, cols: number, rows: number): void {
     this.send({ type: 'resize', id, cols, rows });
+  }
+
+  // ---- B+ 几何所有权流动 ----
+
+  private geoClientIdValue = '';
+  /** auth-ok 下发的本连接 id（web 端与 geo-ownership.owner 比对）。 */
+  get geoClientId(): string {
+    return this.geoClientIdValue;
+  }
+
+  claimGeometry(id: string, force?: boolean): void {
+    this.send({ type: 'geo-claim', id, ...(force ? { force: 1 } : {}) });
+  }
+
+  releaseGeometry(id: string): void {
+    this.send({ type: 'geo-release', id });
+  }
+
+  onGeoOwnership(cb: (payload: { id: string; owner: string }) => void): Unsubscribe {
+    this.listeners.geo.push(cb);
+    return () => {
+      this.listeners.geo = this.listeners.geo.filter((l) => l !== cb);
+    };
   }
 
   // ---- environment ----
@@ -492,6 +516,8 @@ export class WebSocketTransport implements TerminalTransport {
         break;
       }
       case 'auth-ok': {
+        // B+：记录本连接 clientId（几何所有权广播对端标识）。
+        if (typeof msg.clientId === 'string' && msg.clientId) this.geoClientIdValue = msg.clientId;
         // R-M3 relay mode: gate open. The host pushes a tabs snapshot right
         // after; re-attach followed sessions (replay via `attached`).
         if (this.relay) {
@@ -500,6 +526,9 @@ export class WebSocketTransport implements TerminalTransport {
         }
         break;
       }
+      case 'geo-ownership':
+        this.listeners.geo.forEach((l) => l({ id: msg.id, owner: msg.owner }));
+        break;
       case 'data':
         this.listeners.data.forEach((l) => l({ id: msg.id, data: msg.data }));
         break;

@@ -13,6 +13,10 @@ export const IPC = {
   PTY_ON_EXIT: 'pty:onExit',
   PTY_ON_TITLE: 'pty:onTitle',
 
+  // B+ 几何所有权流动（renderer→main 聚焦上报 / main→renderer 所有权广播）
+  GEO_FOCUS: 'geo:focus',
+  GEO_ON_OWNERSHIP: 'geo:onOwnership',
+
   // Tab/session registry
   TABS_LIST: 'tabs:list',
   TABS_ON_CHANGE: 'tabs:onChange',
