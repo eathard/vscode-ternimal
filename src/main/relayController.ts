@@ -211,7 +211,10 @@ export class RelayController {
       throw new Error('subcode not available');
     }
     const eff = this.effective();
-    const url = `${eff.url.replace(/\/+$/, '')}/#S=${sub.code}&T=${encodeURIComponent(this.deps.auth.getToken())}`;
+    // 防浏览器 URL 级缓存：同一子码每次查看都附带唯一时间 id（36 进制毫秒）。
+    // 片段参数不进服务器日志；web 端 parseRelayHash 按 key 取 S/T，未知键被忽略。
+    const ts = Date.now().toString(36);
+    const url = `${eff.url.replace(/\/+$/, '')}/#S=${sub.code}&T=${encodeURIComponent(this.deps.auth.getToken())}&ts=${ts}`;
     let qrDataUrl = '';
     try {
       qrDataUrl = await QRCode.toDataURL(url, {
