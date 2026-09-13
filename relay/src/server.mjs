@@ -125,6 +125,14 @@ export class RelayServer {
         return;
       }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
+        // P0-崩溃面：ws 8.x 把协议层错误（坏 UTF-8/坏 opcode）re-emit 为
+        // 'error' 事件；任何升级成功的 socket 若无 error 监听，一个未认证
+        // 坏帧就会 uncaught 崩掉整个进程（所有客户管道陪葬）。此处统一兜底：
+        // 记日志并关闭该连接，splice() 内部仍可附加更精细的 kill 逻辑。
+        ws.on('error', (err) => {
+          try { this.info(`ws error pre-route (${pathname}):`, err?.message ?? err); } catch { /* noop */ }
+          try { ws.close(1011, 'protocol error'); } catch { try { ws.terminate(); } catch { /* gone */ } }
+        });
         if (pathname === '/control') this.onControl(ws, req);
         else if (pathname === '/join') this.onJoin(ws, req);
         else this.onPipe(ws, req);
@@ -168,12 +176,18 @@ export class RelayServer {
 
   // ---------- 工具 ----------
 
-  /** 客户端 IP（trustedProxy 开启且来源为 loopback 时采信 XFF 首值，方案书 §3.7）。 */
+  /** 客户端 IP（trustedProxy 开启且来源为 loopback 时采信 XFF **末值**）。
+   * P0：Caddy/nginx 等可信代理把真实 IP **追加**到 XFF 尾部；首值完全
+   * 客户端可控——取首值=伪造一个新身份即可绕过 5 次锁定并无限增殖
+   * 限流记录。末值才是代理亲手追加的那个。 */
   clientIp(req) {
     const remote = req.socket?.remoteAddress ?? '';
     if (this.trustedProxy && (remote === '127.0.0.1' || remote === '::1')) {
       const xff = req.headers['x-forwarded-for'];
-      if (typeof xff === 'string' && xff.length > 0) return xff.split(',')[0].trim();
+      if (typeof xff === 'string' && xff.length > 0) {
+        const parts = xff.split(',').map((x) => x.trim()).filter(Boolean);
+        if (parts.length > 0) return parts[parts.length - 1];
+      }
     }
     return remote;
   }

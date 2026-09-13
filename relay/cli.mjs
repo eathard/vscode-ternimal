@@ -168,6 +168,14 @@ if (cmd === 'serve') {
     console.warn('[relay-cli] 警告：配置中无主码，先运行 add-master（当前仅 --insecure 模式可空跑）');
   }
   const server = new RelayServer({ config: cfg, host, port, webRoot: webRoot || undefined, configFile });
+  // P0-兜底：任何漏网的未捕获异常（尤其 ws 协议错误路径）不允许直接崩掉
+  // 全部客户的管道——记日志保活，交给 sweep/心跳去清理死连接。
+  process.on('uncaughtException', (err) => {
+    console.error('[relay-cli] uncaughtException (suppressed):', err?.stack ?? err);
+  });
+  process.on('unhandledRejection', (err) => {
+    console.error('[relay-cli] unhandledRejection (suppressed):', err?.stack ?? err);
+  });
   server.start().then((actual) => {
     console.log(`[relay-cli] serving http://${host}:${actual}  webRoot=${webRoot || '(无)'}`);
   }).catch((err) => die(`启动失败: ${err.message}`));

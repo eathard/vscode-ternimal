@@ -54,8 +54,13 @@ async function boot(root: HTMLElement): Promise<void> {
   let app: TerminalApp | null = null;
   let everReady = false;
 
+  let currentTransport: WebSocketTransport | null = null;
   const startWith = (creds: RelayCreds): void => {
+    // P0：换凭据重试前掐掉旧 transport——否则旧连接的 denied/关闭事件
+    // 会继续打到 gate，把用户正在输入的新凭据卡片顶掉。
+    currentTransport?.dispose();
     const transport = new WebSocketTransport(relayWsUrl(), { relay: creds });
+    currentTransport = transport;
     setTransport(transport);
     transport.onRelayState((state) => {
       switch (state) {
@@ -80,9 +85,27 @@ async function boot(root: HTMLElement): Promise<void> {
 
   const creds = parseRelayHash(window.location.hash);
   if (creds) {
+    // P0：令牌不得驻留浏览器——历史/地址栏/截屏/复制链接都是活凭据。
+    // LAN 认证页早就这么做（history.replaceState）；刷新重连靠
+    // sessionStorage 快照（仅本标签页存活）。
+    try {
+      sessionStorage.setItem('ternimal.relayCreds', JSON.stringify(creds));
+      history.replaceState(null, '', location.pathname);
+    } catch { /* 隐私模式：降级为仅清 URL */ }
     gate.showConnecting();
     startWith(creds);
   } else {
+    // 刷新恢复：URL 已清，凭据从 sessionStorage 复原（无痕模式则走手输卡）
+    let cached: RelayCreds | null = null;
+    try {
+      const raw = sessionStorage.getItem('ternimal.relayCreds');
+      if (raw) cached = JSON.parse(raw) as RelayCreds;
+    } catch { /* corrupted: ignore */ }
+    if (cached) {
+      gate.showConnecting();
+      startWith(cached);
+      return;
+    }
     gate.showCard(startWith, t(locale, 'relay.gate.badFragment'));
   }
 }

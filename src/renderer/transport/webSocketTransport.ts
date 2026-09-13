@@ -333,7 +333,7 @@ export class WebSocketTransport implements TerminalTransport {
       if (this.relay) {
         // R-M4-A: 只发 join；认证改挑战应答——收到 auth-challenge 后回
         // HMAC(token, nonce)，Token 明文不再经过中继/插件。
-        this.send({ v: 1, type: 'join', subCode: this.relay.subCode });
+        this.sendControl({ v: 1, type: 'join', subCode: this.relay.subCode });
         return; // re-attach happens after auth-ok (server pushes tabs then)
       }
       if (this.outbox.length) {
@@ -375,6 +375,9 @@ export class WebSocketTransport implements TerminalTransport {
 
   private scheduleReconnect(): void {
     if (this.closedByUser || this.reconnectTimer !== null) return;
+    // P0：denied/revoked 是终态判定（错令牌/被锁/被吊销）——重试只会给
+    // 宿主的共享鉴权锁定窗续期（2026-09-13 循环事故的完整闭环）。
+    if (this.relay && (this.gateState === 'denied' || this.gateState === 'revoked')) return;
     if (this.relay && !this.everAuthenticated && this.reconnectAttempt >= 8) {
       // Pre-auth storm cap (relay mode): every attempt failed before the
       // host confirmed auth — stale credentials or a wedged path. Stop and
@@ -415,7 +418,7 @@ export class WebSocketTransport implements TerminalTransport {
       const sig = await subtle.sign('HMAC', key, enc.encode(nonce));
       const mac = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
       this.relayNonce = nonce; // R-M4-B: 留作 HKDF salt
-      this.send({ type: 'auth-response', mac, enc: 1 }); // enc 由 host 决定
+      this.sendControl({ type: 'auth-response', mac, enc: 1 }); // enc 由 host 决定
     } catch (err) {
       console.warn('[Ternimal] challenge answer failed:', err);
     }
@@ -425,9 +428,14 @@ export class WebSocketTransport implements TerminalTransport {
     this.sendRaw(JSON.stringify(msg));
   }
 
+  /** 认证流程自身的控制帧（join / auth-response）：不受认证门约束。 */
+  private sendControl(msg: unknown): void {
+    this.sendRaw(JSON.stringify(msg), true);
+  }
+
   /** R-M4-B：加密激活后出站业务帧一律 seal；控制帧（join/auth-response）
    * 在密钥生效前发送，天然明文。 */
-  private sendRaw(raw: string): void {
+  private sendRaw(raw: string, control = false): void {
     if (this.e2eeKey) {
       this.e2eeQueue = this.e2eeQueue
         .then(async () => {
@@ -439,10 +447,15 @@ export class WebSocketTransport implements TerminalTransport {
         });
       return;
     }
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    // P0：relay 模式下 socket OPEN ≠ 可发——join 后到 auth-ok 前是认证
+    // 窗口，明文业务帧会被宿主以 AUTH_REQUIRED 杀连接（failWith）。E2EE
+    // 派生完成前同理。未 ready 一律入 outbox（relayAuthOk 统一冲洗）。
+    // join/auth-response 本身必须在认证前发出（控制帧豁免），否则死锁。
+    const relayNotReady = !control && this.relay && this.gateState !== 'ready';
+    if (!relayNotReady && this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(raw);
     } else {
-      this.outbox.push(raw); // e.g. create during startup, before open
+      this.outbox.push(raw); // e.g. create during startup, before open/auth
     }
   }
 

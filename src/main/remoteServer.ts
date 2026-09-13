@@ -684,8 +684,10 @@ export class RemoteServer {
 
     on('title', (payload: TitlePayload) => {
       const msg: WsTitleMsg = { type: 'title', id: payload.id, title: payload.title };
+      // P0-零知识：pending-auth（挑战未完成）客户端不得接收任何业务帧——
+      // 认证前窗口推 tabs/title 会把会话元数据明文泄给中继运营方。
       for (const client of this.clients) {
-        this.sendTo(client, msg);
+        if (client.authenticated) this.sendTo(client, msg);
       }
     });
 
@@ -695,8 +697,9 @@ export class RemoteServer {
         console.error(`[RS:debug] tabs fanout n=${tabs.length} clients=${this.clients.size}`);
       }
       const msg: WsTabsMsg = { type: 'tabs', tabs };
+      // P0-零知识：同 title —— pending-auth 客户端零业务流量。
       for (const client of this.clients) {
-        this.sendTo(client, msg);
+        if (client.authenticated) this.sendTo(client, msg);
       }
     });
   }
