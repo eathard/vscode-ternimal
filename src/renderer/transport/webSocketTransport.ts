@@ -326,7 +326,9 @@ export class WebSocketTransport implements TerminalTransport {
     }
 
     this.ws.onopen = () => {
-      this.reconnectAttempt = 0;
+      // 重试计数只在「认证成功」时清零（relay 路径）：join 能连上但认证
+      // 失败的循环（旧令牌页）不能靠 onopen 无限洗白重试上限。
+      if (!this.relay) this.reconnectAttempt = 0;
       this.e2eeKey = null; // 新连接新会话：重连后按新挑战重新派生
       if (this.relay) {
         // R-M4-A: 只发 join；认证改挑战应答——收到 auth-challenge 后回
@@ -447,6 +449,7 @@ export class WebSocketTransport implements TerminalTransport {
   /** R-M3 relay mode ready 路径（R-M4-B: 密钥激活后走加密出站）。 */
   private relayAuthOk(): void {
     this.everAuthenticated = true;
+    this.reconnectAttempt = 0; // 认证成功才洗白重试上限（与 onopen 的 relay 分支配套）
     this.setGate('ready');
     if (this.outbox.length) {
       const queued = this.outbox.splice(0);
@@ -542,9 +545,12 @@ export class WebSocketTransport implements TerminalTransport {
       case 'error':
         if (this.relay) {
           // Relay mode has no /login page — surface to the gate UI instead.
-          // Terminal close follows for fatal codes; FATAL_CLOSE_CODES stops
-          // the retry loop there.
-          this.setGate(msg.code === 4005 ? 'denied' : 'connecting', `error ${msg.code}`);
+          // 宿主侧 error 帧：4005（凭据错）与 4002（鉴权窗被锁）重试无益
+          // 且火上浇油——锁定窗口正是被重试续期的，必须立刻停（2026-09-13
+          // 「中继连接中断，正在自动重连…」死循环根因）。其余（4003 无会话
+          // 等）保持瞬态退避。
+          const fatalHostError = msg.code === 4005 || msg.code === 4002;
+          this.setGate(fatalHostError ? 'denied' : 'connecting', `error ${msg.code}`);
         } else if (msg.code === 4001 && typeof window !== 'undefined' && window.location) {
           // AUTH_REQUIRED (M3): land on the login page.
           window.location.href = '/login';
