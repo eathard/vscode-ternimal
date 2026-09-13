@@ -5,6 +5,7 @@
 //   created/removed tabs appear/disappear here in M2)
 import { SessionInfo } from '../shared/ipcChannels';
 import { getTransport } from './transport';
+import type { WebSocketTransport } from './transport/webSocketTransport';
 import { TerminalTab, setInputTransform } from './terminalTab';
 import { TabBar } from './tabBar';
 import { SearchBar } from './searchBar';
@@ -76,12 +77,34 @@ export class TerminalApp {
 
     // Web transport: attach-carried replay fills a freshly rendered tab
     // (first activation / browser refresh). Local IPC is unaffected.
+    // P2：重连后的 re-attach 不再丢增量——旧逻辑对已输出的标签页整段
+    // 丢弃回放，断线期间桌面端跑的命令在手机上永远缺失。改为：重连
+    // re-attach 时重置终端并以环形缓冲全量重写（滚动历史超出环深的
+    // 部分丢失，换取内容一致性；环深 256KB 通常覆盖整个会话）。
     transport.onAttached((p) => {
       const tab = this.tabs.get(p.id);
-      if (tab && !tab.hasOutput && p.replay) {
+      if (!tab) return;
+      if (!tab.hasOutput && p.replay) {
+        tab.write(p.replay);
+      } else if (p.replay && this.reconnectHeal.has(p.id)) {
+        this.reconnectHeal.delete(p.id);
+        tab.reset();
         tab.write(p.replay);
       }
     });
+    // P2：重连就绪 → 标记全部现存标签页待补齐（re-attach 时全量重写）。
+    const wsT = transport as WebSocketTransport;
+    if (typeof wsT.onRelayState === 'function') {
+      let wasReady = false;
+      wsT.onRelayState((state) => {
+        if (state === 'ready') {
+          if (wasReady) for (const id of this.tabs.keys()) this.reconnectHeal.add(id);
+          wasReady = true;
+        } else if (state !== 'connecting') {
+          wasReady = false; // denied/revoked 终态：无需补齐
+        }
+      });
+    }
     this.tabBar.onNewTab = () => {
       this.newTab().catch((err) => console.error('[Ternimal] newTab failed:', err));
     };
@@ -302,7 +325,10 @@ export class TerminalApp {
   }
 
   /** B+：活跃标签变化回调（web 自动接管在新标签上重新申请所有权）。 */
-  onTabActivated: ((id: string) => void) | null = null;
+  
+  /** P2：待补齐输出的会话（重连 re-attach 时全量重写回放）。 */
+  private readonly reconnectHeal = new Set<string>();
+onTabActivated: ((id: string) => void) | null = null;
 
   switchTab(id: string): void {
     if (!this.tabs.has(id)) return;

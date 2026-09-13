@@ -136,6 +136,12 @@ export class TerminalTab {
     this.wrapper.write(data);
   }
 
+  /** P2：重连补齐——重置渲染状态后全量重写回放（服务端环形缓冲）。 */
+  reset(): void {
+    this.hasOutput = false;
+    this.wrapper.reset();
+  }
+
   show(): void {
     this.container.style.display = 'block';
     this.wrapper.focus();

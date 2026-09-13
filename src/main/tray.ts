@@ -160,10 +160,12 @@ export class TrayController {
       }
     );
     this.tray.setContextMenu(Menu.buildFromTemplate(menu));
+    // P2：tooltip 不再携带 #T=令牌——一次悬停就把承载凭据暴露给肩窥/
+    // 屏幕共享。令牌仍可经「查看访问信息」点击获取。
     this.tray.setToolTip(
       relayState === 'on'
-        ? `Ternimal — ${t(deps.locale, 'tray.relay.on')} — ${this.accessUrl()}`
-        : `Ternimal — ${this.accessUrl()}`
+        ? `Ternimal — ${t(deps.locale, 'tray.relay.on')} — ${this.accessUrl().split('#')[0]}`
+        : `Ternimal — ${this.accessUrl().split('#')[0]}`
     );
   }
 

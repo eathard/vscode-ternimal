@@ -198,6 +198,11 @@ export class XtermWrapper implements IXtermWrapper {
     el.style.transform = scale < 1 ? `scale(${scale})` : '';
   }
 
+  /** P2：重置终端状态（xterm 原生 reset：清屏+清滚动+复位模式）。 */
+  reset(): void {
+    this.terminal.reset();
+  }
+
   write(data: string): void {
     this.terminal.write(data);
   }

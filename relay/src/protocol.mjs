@@ -40,7 +40,8 @@ export const CLOSE = {
   SUBCODE_REVOKED: 4009,
   TAKEOVER: 4010,
   OCCUPIED: 4011,
-  BACKPRESSURE: 4011,
+  // P2：BACKPRESSURE 已删——与 OCCUPIED 撞号 4011（从未被发送：背压
+  // 终止用 terminate()，不携带关闭码）；若未来需要，从 4012 起编号。
   FIRST_FRAME_TIMEOUT: 4012,
 };
 

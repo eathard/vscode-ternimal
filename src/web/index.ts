@@ -163,15 +163,32 @@ function wireAutoAdapt(app: TerminalApp): void {
     else releaseClaimed();
   });
   // 兜底重试：窗口经 WM 激活但页面本已持焦时不会再生 focus 事件——
-  // 专注且未持有时每 3s 重发申请（服务端裁定，幂等无害）。
-  setInterval(() => {
+  // 专注且未持有时周期重发申请。P2：固定 3s 轮询在「双设备都专注」时
+  // 与服务端 5s 驻留规则形成 ~6s 乒乓（每次翻转全体观看者跟着重排）。
+  // 改为指数退避：申请未被裁定为本端持有时 3s→6s→12s→…封顶 30s；
+  // 任何注意力跃迁（focus/可见/切标签/重连就绪）立即复位退避。
+  let pollDelay = 3_000;
+  const resetBackoff = (): void => { pollDelay = 3_000; };
+  let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  const poll = (): void => {
     const id = app.getActiveTabId();
-    if (id && !app.isGeometryOwner(id)) claimActive();
-  }, 3000);
+    if (id && !app.isGeometryOwner(id)) {
+      if (attentive()) transport.claimGeometry?.(id);
+      pollDelay = Math.min(pollDelay * 2, 30_000); // 未成为持有者 → 退避加倍
+    } else {
+      pollDelay = 3_000; // 已持有（或无活跃标签）→ 复位
+    }
+    pollTimer = setTimeout(poll, pollDelay);
+  };
+  pollTimer = setTimeout(poll, pollDelay);
+  window.addEventListener('focus', resetBackoff);
+  document.addEventListener('visibilitychange', resetBackoff);
+  window.addEventListener('pagehide', () => { if (pollTimer) clearTimeout(pollTimer); });
   window.addEventListener('blur', releaseClaimed);
   window.addEventListener('pagehide', releaseClaimed);
   // 标签切换：释放旧的，在新活跃标签上重新申请。
   app.onTabActivated = () => {
+    resetBackoff();
     releaseClaimed();
     claimedId = null;
     claimActive();

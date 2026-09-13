@@ -96,6 +96,8 @@ export class WebSocketTransport implements TerminalTransport {
   private waitersForTabs: Array<(tabs: SessionInfo[]) => void> = [];
   /** Messages sent while offline; flushed the moment the socket opens. */
   private outbox: string[] = [];
+  /** P2：E2EE 密钥派生期间到达的 secure 帧缓冲（auth-ok→HKDF 竞态）。 */
+  private pendingSecure: string[] = [];
   /** R-M4-B: 最近一次挑战的 nonce（E2E 会话密钥 HKDF 材料）。 */
   private relayNonce = '';
   /** R-M4-B: E2E 会话密钥（auth-ok{enc:1} 起生效；null = 明文）。 */
@@ -477,6 +479,9 @@ export class WebSocketTransport implements TerminalTransport {
   private async activateE2EE(): Promise<void> {
     try {
       this.e2eeKey = await deriveSessionKey(this.relay!.token, this.relayNonce);
+      // P2：冲洗密钥派生期间缓冲的 secure 帧（见 handleMessage case）。
+      const queued = this.pendingSecure.splice(0);
+      for (const fr of queued) this.handleMessage(fr);
       this.relayAuthOk();
     } catch (err) {
       console.warn('[Ternimal] E2EE key derivation failed:', err);
@@ -515,6 +520,14 @@ export class WebSocketTransport implements TerminalTransport {
       }
       case 'secure': {
         // R-M4-B: 解封后按普通业务帧分发（嵌套 secure 解封必败 → 丢弃）。
+        // P2：auth-ok{enc:1} 与客户端 HKDF 完成之间到达的 secure 帧曾
+        // 被静默丢弃（服务端 auth-ok 后立刻推 tabs，竞态必输）——缓冲
+        // 到密钥就绪后按序冲洗。
+        if (!this.e2eeKey) {
+          this.pendingSecure.push(raw);
+          if (this.pendingSecure.length > 200) this.pendingSecure.shift(); // 有界
+          return;
+        }
         if (this.e2eeKey) {
           void openFrame(this.e2eeKey, raw)
             .then((inner) => {

@@ -35,8 +35,20 @@ export async function ensureCertificate(certDir: string, certPathOverride?: stri
     try {
       const cert = fs.readFileSync(certFile, 'utf8');
       const key = fs.readFileSync(keyFile, 'utf8');
-      if (cert.includes('CERTIFICATE') && key.includes('PRIVATE KEY')) {
+      // P2：有效期校验——过期证书继续服役会让所有客户端吃 TLS 错误且无
+      // 自愈。解析 notAfter，过期（或 7 天内到期）即走重签分支。
+      const m = /Not After\s*:\s*([^\n]+)/.exec(cert);
+      let expired = false;
+      if (m) {
+        const notAfter = Date.parse(m[1].trim());
+        if (Number.isFinite(notAfter) && notAfter - Date.now() < 7 * 86_400_000) expired = true;
+      }
+      if (!expired && cert.includes('CERTIFICATE') && key.includes('PRIVATE KEY')) {
         return { cert, key, fingerprint: fingerprintPem(cert), generated: false };
+      }
+      if (expired && !certPathOverride) {
+        // eslint-disable-next-line no-console
+        console.warn('[Ternimal] TLS certificate expired/expiring — regenerating (clients must re-accept once)');
       }
     } catch {
       // fall through to regeneration

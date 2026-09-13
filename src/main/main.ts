@@ -101,6 +101,9 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // P2：渲染进程崩溃/destroy() 不会触发 beforeunload——localFocus 若
+    // 卡在 true，web 端的自动申请将永久被拒（desktopIdle 恒 false）。
+    remoteServer?.setLocalGeoFocus(false);
   });
 }
 
@@ -197,7 +200,11 @@ async function startRemoteServer(portOverride?: number): Promise<void> {
   setRemoteServerForGeo(remoteServer);
 
   // The access URL (token in the fragment) is logged once per launch.
-  console.warn(`[Ternimal] access URL: https://${host === '0.0.0.0' ? lanIpForLog() : host}:${remoteServer.getPort()}/#T=${auth.getToken()}`);
+  // P2：承载令牌不进常规日志（journald/滚动缓冲/聚合器都是泄漏面）；
+  // 调试会话（TERNIMAL_DEBUG）保留全量——排障 SOP 依赖它取测试链接。
+  const full = `https://${host === '0.0.0.0' ? lanIpForLog() : host}:${remoteServer.getPort()}/#T=${auth.getToken()}`;
+  // eslint-disable-next-line no-console
+  console.warn(process.env.TERNIMAL_DEBUG ? `[Ternimal] access URL: ${full}` : `[Ternimal] access URL: https://${host === '0.0.0.0' ? lanIpForLog() : host}:${remoteServer.getPort()}/ (token in tray → 查看访问信息)`);
   console.warn('[Ternimal] 托盘「查看访问信息」可显示二维码（手机扫码即登录），「重置访问令牌」可轮换');
 
   // WBS-R2-E/F：中继编排面（设置 IPC + 分享链接 + 状态广播），

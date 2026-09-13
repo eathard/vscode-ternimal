@@ -12,12 +12,15 @@
 //     ├ subcodes: Map<subCodeId>
 //     └ stats { bytesIn, bytesOut, pipesOpened }
 
-import { newSubCode } from './protocol.mjs';
+import { newSubCode, sha256Hex } from './protocol.mjs';
 
 let subSeq = 0;
 
 export class MemoryStore {
   constructor() {
+    /** P2：明文子码 → 记录 的哈希索引（join 热路径 O(1)，且以
+     * sha256 定长键替代明文遍历比较，顺带消除计时侧信道）。 */
+    this.byCode = new Map();
     /** @type {Map<string, any>} channelId → channel */
     this.channels = new Map();
   }
@@ -64,6 +67,7 @@ export class MemoryStore {
       stats: { bytes: 0, joins: 0 },
     };
     ch.subcodes.set(id, rec);
+    this.byCode.set(sha256Hex(rec.code), rec);
     return rec;
   }
 
@@ -96,16 +100,27 @@ export class MemoryStore {
   }
 
   /**
-   * 按明文子码查找（遍历小规模内存表；子码 24 字符高熵随机）。
+   * 按明文子码查找（哈希索引 O(1)；子码 24 字符高熵随机）。
+   * P2：曾为 O(全部子码) 明文遍历——错码洪峰下即 CPU DoS 放大器。
    * @param {string} code
    */
   findSubCode(code) {
+    return this.byCode.get(sha256Hex(code)) ?? null;
+  }
+
+  /** P2：驱逐「已过期/已吊销且无管道」的子码记录（sweep 周期调用）。 */
+  gcSubCodes() {
+    const now = Date.now();
     for (const ch of this.channels.values()) {
-      for (const sc of ch.subcodes.values()) {
-        if (sc.code === code) return sc;
+      for (const [id, sc] of ch.subcodes) {
+        const dead = sc.revoked || (sc.expiresAt !== null && sc.expiresAt <= now);
+        if (dead) ch.subcodes.delete(id);
       }
     }
-    return null;
+    for (const [hash, sc] of this.byCode) {
+      const dead = sc.revoked || (sc.expiresAt !== null && sc.expiresAt <= now);
+      if (dead) this.byCode.delete(hash);
+    }
   }
 
   /**
@@ -123,8 +138,11 @@ export class MemoryStore {
   /** 删除子码记录（吊销后的清理：从内存表移除，管道已死）。 */
   purgeSubCode(channelId, subCodeId) {
     const ch = this.getChannel(channelId);
-    if (!ch || !ch.subcodes.has(subCodeId)) return null;
-    return ch.subcodes.delete(subCodeId) ? { id: subCodeId, purged: true } : null;
+    const sc = ch?.subcodes.get(subCodeId);
+    if (!sc) return null;
+    this.byCode.delete(sha256Hex(sc.code));
+    ch.subcodes.delete(subCodeId);
+    return { id: subCodeId, purged: true };
   }
 
   /** 状态快照（/health 与调试用）。 */

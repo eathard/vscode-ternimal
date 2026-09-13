@@ -45,8 +45,13 @@ export function loadConfig(file) {
   let raw = {};
   try {
     raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    raw = {};
+  } catch (err) {
+    // P2：区分「不存在」（正常首启，用默认）与「存在但损坏」（必须拒
+    // 启——静默降级为默认后，首次管理写盘会把真实主码/管理凭据全部
+    // 抹掉，属于灾难性数据丢失路径）。
+    if (err?.code !== 'ENOENT') {
+      throw new Error(`relay-config.json 解析失败（拒绝启动以防配置被默认值覆盖重写）: ${err.message}`);
+    }
   }
   return {
     ...structuredClone(DEFAULT_CONFIG),

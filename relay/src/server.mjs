@@ -92,6 +92,10 @@ export class RelayServer {
     this.backpressureBytes = L.backpressureBytes ?? 1024 * 1024;
     this.maxPipesPerChannel = L.maxPipesPerChannel ?? 4;
     this.maxPayloadBytes = L.maxPayloadBytes ?? 1024 * 1024;
+    // P2：文档承诺的签发默认 TTL——此前从未赋值，配置项被静默忽略。
+    this.subcodeTtlHours = L.subcodeTtlHours ?? 6;
+    /** P2：异步登录 scrypt 并发闸。 */
+    this.loginBusy = 0;
     this.log = opts.log ?? true;
     /** @type {MemoryStore} */
     this.store = opts.store ?? new MemoryStore();
@@ -625,6 +629,9 @@ export class RelayServer {
         try { pipe.hostWs.ping(); } catch { /* gone */ }
       }
     }
+    // P2：过期/吊销子码记录 GC（管道已在上方收割）——查表规模不再随
+    // 生命期单调增长。
+    this.store.gcSubCodes();
   }
 
   // ---------- HTTP：静态 / 健康 / 子码管理 API ----------
@@ -647,6 +654,24 @@ export class RelayServer {
     const want = Buffer.from(m[2], 'hex');
     const got = crypto.scryptSync(String(pw), Buffer.from(m[1], 'hex'), want.length);
     return want.length === got.length && crypto.timingSafeEqual(want, got);
+  }
+
+  /** P2：异步版管理口令校验——scryptSync(N=16384) 在请求路径上阻塞事件
+   * 循环数十毫秒，登录洪峰会拖死全部数据面管道。并发闸（loginGates）
+   * 限制同时在算的 scrypt 数，排队者超时直接 429。 */
+  verifyAdminPasswordAsync(pw) {
+    const m = /^scrypt\$([0-9a-f]+)\$([0-9a-f]+)$/.exec(this.adminHash ?? '');
+    if (!m) return Promise.resolve(false);
+    const want = Buffer.from(m[2], 'hex');
+    if (this.loginBusy >= 2) return Promise.resolve(false); // 并发闸：超出即拒绝
+    this.loginBusy += 1;
+    return new Promise((resolve) => {
+      crypto.scrypt(String(pw), Buffer.from(m[1], 'hex'), want.length, (err, got) => {
+        this.loginBusy -= 1;
+        if (err || want.length !== got?.length) return resolve(false);
+        resolve(crypto.timingSafeEqual(want, got));
+      });
+    });
   }
 
   /** 管理会话：签发/校验（内存、TTL、容量上限）。 */
@@ -759,7 +784,7 @@ export class RelayServer {
       if (this.byIp.isLocked(ip)) return send(429, { error: 'rate limited' });
       if (!this.adminHash) return send(404, { error: 'admin not configured' });
       const body = await readJson(req);
-      if (!body || !this.verifyAdminPassword(String(body.password ?? ''))) {
+      if (!body || !(await this.verifyAdminPasswordAsync(String(body.password ?? '')))) {
         this.byIp.fail(ip);
         return send(401, { error: this.byIp.isLocked(ip) ? 'rate limited' : 'bad password' });
       }

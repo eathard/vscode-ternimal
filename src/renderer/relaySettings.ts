@@ -52,6 +52,9 @@ function closePanel(): void {
   unsubscribeStatus = null;
   overlay?.remove();
   overlay = null;
+  // P2：查看弹窗（子码大图/二维码）挂在 document.body 上，与面板生命
+  // 周期脱钩——面板关闭时若不带走它，Esc 路径会留下孤儿遮罩挡住全窗。
+  document.querySelectorAll('.rs-view-mask').forEach((n) => n.remove());
 }
 
 function el(tag: string, className: string, text?: string): HTMLElement {

@@ -333,7 +333,14 @@ export class RemoteServer {
         } else {
           const type =
             CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': type }).end(req.method === 'HEAD' ? undefined : data);
+          // P2：反点击劫持 + 反嗅探——终端可被嵌进攻击者 iframe 诱导
+          // 点击输入命令；nosniff 防 MIME 混淆。
+          res.writeHead(200, {
+            'Content-Type': type,
+            'X-Frame-Options': 'DENY',
+            'X-Content-Type-Options': 'nosniff',
+            'Referrer-Policy': 'no-referrer',
+          }).end(req.method === 'HEAD' ? undefined : data);
         }
         resolve();
       });

@@ -211,8 +211,10 @@ export class SessionRegistry extends EventEmitter {
     const pending = entry.pendingResize;
     if (!pending) return;
     // Guard against zero/negative dimensions (from VS Code terminalProcess.ts:532-568)
-    const cols = Math.max(pending.cols, 1);
-    const rows = Math.max(pending.rows, 1);
+    // P2：上界钳制（1..1000）——1e9 传给 node-pty 的 ioctl/ConPTY 会被
+    // 截断为 unsigned short（可能归零），TUI 状态直接损坏。
+    const cols = Math.min(Math.max(pending.cols, 1), 1000);
+    const rows = Math.min(Math.max(pending.rows, 1), 1000);
     entry.pendingResize = null;
     if (cols === entry.info.cols && rows === entry.info.rows) return;
 
