@@ -127,8 +127,11 @@ function mountApp(root: HTMLElement): TerminalApp {
     return app;
   } catch (err) {
     console.error('[Ternimal/Web] Failed to create TerminalApp:', err);
-    document.body.innerHTML =
-      '<pre style="color:red;padding:20px;">Error: ' + err + '</pre>';
+    // P3：textContent 而非 innerHTML——错误消息是动态串。
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'color:red;padding:20px;';
+    pre.textContent = 'Error: ' + err;
+    document.body.replaceChildren(pre);
     throw err;
   }
 }

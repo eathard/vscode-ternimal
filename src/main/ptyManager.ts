@@ -84,10 +84,12 @@ export class PtyManager extends EventEmitter {
       // Windows conpty can hang on kill - use a timeout
       if (process.platform === 'win32') {
         const timeout = setTimeout(() => {
+          // P3（注释纠正）：超时后重试一次同信号 kill——node-pty 无更强
+          // 的强制手段；若仍失败则只能等进程随应用退出被回收。
           try {
             ptyProcess.kill();
           } catch {
-            // Force kill on timeout
+            /* already dead */
           }
         }, 5000);
         try {
@@ -112,11 +114,8 @@ export class PtyManager extends EventEmitter {
   private getDefaultShell(): string {
     if (process.platform === 'win32') {
       // Try PowerShell first, then fall back to cmd
-      const psPath = process.env.COMSPEC?.replace('cmd.exe', 'powershell\\powershell.exe');
-      if (psPath) {
-        return 'powershell.exe';
-      }
-      return process.env.COMSPEC || 'cmd.exe';
+      // P3：删除死代码——psPath 计算后被忽略（恒返回 powershell.exe）。
+      return 'powershell.exe';
     }
     return process.env.SHELL || '/bin/bash';
   }

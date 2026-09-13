@@ -214,6 +214,9 @@ export class WebSocketTransport implements TerminalTransport {
   }
 
   attach(id: string): void {
+    // P3：幂等——重复 attach 曾让服务端每次切标签都重推全量回放
+    // （E2EE 下还逐帧 AES-GCM 封装，纯耗流量）。
+    if (this.attachedIds.has(id)) return;
     this.attachedIds.add(id);
     this.send({ type: 'attach', id });
   }
@@ -358,6 +361,9 @@ export class WebSocketTransport implements TerminalTransport {
       // (code, reason) callback args. Normalize.
       const code = typeof arg0 === 'number' ? arg0 : Number(arg0?.code ?? 1006);
       this.ws = null;
+      // P3：attachedIds 刻意【不】清——它是 relayAuthOk 重连 re-attach 的
+      // 事实源（服务端 dropClient 后这些 attach 必须重发）。幂等挡板只需
+      // 防 switchTab 的重复 send；relayAuthOk 的循环绕过 attach() 直发。
       if (this.relay) {
         const fatal = FATAL_CLOSE_CODES[code];
         if (fatal) {

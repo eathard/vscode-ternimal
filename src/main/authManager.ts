@@ -143,21 +143,6 @@ export class AuthManager {
    * Verify a first-frame token on the relay path.
    * @returns ok = token valid; locked = currently rate-limited (implies !ok).
    */
-  relayAuth(token: string): { ok: boolean; locked: boolean } {
-    const now = Date.now();
-    const rec = this.ips.get(AuthManager.RELAY_KEY);
-    if (rec && rec.lockedUntil > now) {
-      return { ok: false, locked: true };
-    }
-    if (this.verifyToken(token)) {
-      this.ips.delete(AuthManager.RELAY_KEY);
-      return { ok: true, locked: false };
-    }
-    this.recordFailure(AuthManager.RELAY_KEY, now);
-    const updated = this.ips.get(AuthManager.RELAY_KEY);
-    return { ok: false, locked: !!updated && updated.lockedUntil > now };
-  }
-
   // ---------- R-M4-A: 挑战应答（Token 不再明文过 relay） ----------
 
   private static readonly NONCE_TTL_MS = 30_000;

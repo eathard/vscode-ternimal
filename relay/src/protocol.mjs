@@ -11,7 +11,6 @@
 
 import * as crypto from 'crypto';
 
-export const PROTOCOL_VERSION = 1;
 
 /** 控制面消息类型（JSON text 帧）。 */
 export const CTRL = {

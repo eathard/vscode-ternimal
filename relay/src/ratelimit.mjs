@@ -24,12 +24,6 @@ export class RateLimiter {
     return !!rec && rec.lockedUntil > Date.now();
   }
 
-  /** 剩余锁定毫秒数（未锁定为 0）。 @param {string} key */
-  lockedRemainingMs(key) {
-    const rec = this.recs.get(key);
-    return rec ? Math.max(0, rec.lockedUntil - Date.now()) : 0;
-  }
-
   /**
    * 记录一次失败；达到阈值则上锁并返回 true（本次已触发锁定）。
    * @param {string} key

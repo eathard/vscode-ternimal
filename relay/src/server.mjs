@@ -19,7 +19,7 @@ import * as path from 'path';
 import { URL } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
-  CTRL, JOIN, CLOSE,
+  CTRL, CLOSE,
   sha256Hex, deriveChannelId, safeEqualHex, newMasterCode,
   parseControlFirst, parseJoinFirst,
 } from './protocol.mjs';
@@ -242,7 +242,6 @@ export class RelayServer {
 
   /** 立即停止一枚主码名下全部通道（吊销/到期共用的执行器）。 */
   killChannelsOfMaster(entry, why) {
-    const want = sha256Hex; // noqa
     for (const ch of this.store.channels.values()) {
       if (ch.masterEntry !== entry) continue;
       for (const pipe of [...ch.pipes]) pipe.kill(why);
@@ -542,11 +541,17 @@ export class RelayServer {
     fwd(hostWs, clientWs, 'bytesOut');
 
     // 对接完成：冲放在等待期缓存的客户端早期帧（auth 首帧等）
+    // P3：早期帧曾只累计通道 bytesIn——总额账（bumpTotal）与子码字节账
+    // 双双漏记认证帧；且无背压检查（一次性冲放小帧风险可忽略，仍补齐）。
     if (pending.early && pending.early.length > 0 && hostWs.readyState === OPEN) {
+      const sc = ch.subcodes.get(pending.subCodeId);
       for (const [data, isBinary] of pending.early) {
         try {
+          if (hostWs.bufferedAmount > this.backpressureBytes) { kill('backpressure', true); break; }
           hostWs.send(data, { binary: isBinary });
           ch.stats.bytesIn += data.length;
+          this.bumpTotal(ch.id, 'bytesIn', data.length);
+          if (sc) sc.stats.bytes += data.length;
         } catch {
           kill('flush error');
           break;

@@ -65,7 +65,8 @@ export class TerminalApp {
     this.tabBar = new TabBar(root);
     this.tabBar.onTabSelect = (id) => this.switchTab(id);
     this.tabBar.onTabClose = (id) => this.closeTab(id);
-    this.tabBar.onNewTab = () => void this.newTab();
+    // P3：onNewTab 仅在下方（带错误日志的）正式赋值处设置——此处早期
+    // 赋值会被立即覆盖，纯死代码。
 
     // R-M2 (WBS-R2-E): relay settings gear — host window only; on the web
     // bundle the transport seam never exposes relay admin, so the button is
@@ -188,20 +189,6 @@ export class TerminalApp {
     for (const [id, tab] of this.tabs) tab.setGeometryOwner(this.effectiveOwner(id));
   }
 
-  /** Toggle the active tab's geometry ownership; returns the new state. */
-  toggleAdapt(tabId: string | null): boolean {
-    const id = tabId ?? this.activeTabId;
-    if (!id) return false;
-    const cur = this.effectiveOwner(id);
-    const tab = this.tabs.get(id);
-    if (!tab) return false;
-    try {
-      window.localStorage.setItem(`ternimal.adapt.${id}`, cur ? '0' : '1');
-    } catch { /* private mode etc. */ }
-    tab.setGeometryOwner(!cur);
-    return !cur;
-  }
-
   getActiveTabId(): string | null {
     return this.activeTabId;
   }
@@ -233,12 +220,8 @@ export class TerminalApp {
 
   private effectiveOwner(id: string): boolean {
     if (!this.followMode) return true; // Electron window: everyone owns (unchanged)
-    let override: string | null = null;
-    try {
-      override = window.localStorage.getItem(`ternimal.adapt.${id}`);
-    } catch { /* ignore */ }
-    if (override === '1') return true;
-    if (override === '0') return false;
+    // P3：B+ 后所有权由服务端 GeoArbiter 裁定——本地 localStorage 覆盖
+    // 机制（toggleAdapt 时代遗物）已删，唯一事实源是 geo-ownership 广播。
     return this.createdHere.has(id);
   }
 

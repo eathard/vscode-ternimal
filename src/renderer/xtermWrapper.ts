@@ -24,6 +24,7 @@ export class XtermWrapper implements IXtermWrapper {
   readonly searchAddon: SearchAddon;
   private unicode11Addon: Unicode11Addon;
   private resizeCallbacks: ((cols: number, rows: number) => void)[] = [];
+  private resizeObserver: ResizeObserver | null = null; // P3：dispose 需 disconnect
   private dataCallbacks: ((data: string) => void)[] = [];
   private static webglFailed = false;
 
@@ -96,11 +97,12 @@ export class XtermWrapper implements IXtermWrapper {
       }
     });
 
-    // Listen for container resize
-    const resizeObserver = new ResizeObserver(() => {
+    // Listen for container resize（P3：保存引用，dispose 时 disconnect——
+    // 观察者闭包持有 wrapper，曾随开关标签页无限累积）
+    this.resizeObserver = new ResizeObserver(() => {
       this.refit();
     });
-    resizeObserver.observe(container);
+    this.resizeObserver.observe(container);
 
     // Listen for terminal resize events (from fitAddon)
     this.terminal.onResize(({ cols, rows }) => {
@@ -222,6 +224,8 @@ export class XtermWrapper implements IXtermWrapper {
   }
 
   dispose(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.disposeWebgl();
     this.terminal.dispose();
   }
