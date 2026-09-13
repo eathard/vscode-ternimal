@@ -306,20 +306,23 @@ export class TerminalApp {
 
   switchTab(id: string): void {
     if (!this.tabs.has(id)) return;
-    if (id !== this.activeTabId) this.onTabActivated?.(id);
+    // P1：先更新 activeTabId 再通知——回调方（wireAutoAdapt）读
+    // getActiveTabId() 时必须看到新标签页，否则切换瞬间申请的是
+    // 「正在离开的」会话，把手机钉成双会话所有者。
+    const previousId = this.activeTabId;
+    const changed = id !== previousId;
+    this.activeTabId = id;
+    if (changed) this.onTabActivated?.(id);
 
     // Pending soft-key combos never survive a tab switch (one-shot
     // semantics belong to the tab the user is looking at).
     this.clearPendingMods();
 
-    // Hide current
-    if (this.activeTabId) {
-      const current = this.tabs.get(this.activeTabId);
+    // Hide previous
+    if (previousId && previousId !== id) {
+      const current = this.tabs.get(previousId);
       if (current) current.hide();
     }
-
-    // Show new
-    this.activeTabId = id;
     // Remote transport requires an explicit attach before input is
     // accepted server-side; local IPC attach is a no-op.
     getTransport().attach(id);

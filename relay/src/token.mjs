@@ -54,7 +54,7 @@ export function encodeAccessToken(cfg) {
  * @param {string} raw
  * @returns {{ ok: true, config: object } | { ok: false, error: string }}
  */
-export function decodeAccessToken(raw) {
+export async function decodeAccessToken(raw) {
   if (typeof raw !== 'string') return { ok: false, error: 'token must be a string' };
   const s = raw.replace(/\s+/g, '').replace(/\u3000/g, '');
   if (!s.startsWith(TOKEN_PREFIX)) return { ok: false, error: `口令须以 ${TOKEN_PREFIX} 开头` };
@@ -67,9 +67,22 @@ export function decodeAccessToken(raw) {
   const chk = rest.slice(dot + 1);
   const expect = crypto.createHash('sha256').update(b64).digest('hex').slice(0, 8);
   if (chk !== expect) return { ok: false, error: '校验失败：口令被截断或篡改' };
+  // P1：解压前先封顶——几 KB 的恶意压缩体可膨胀到 GB 级（zip 炸弹），
+  // inflateRawSync 无 maxOutputLength 选项，用 chunk 流式带硬上限替代。
+  if (b64.length > 200_000) return { ok: false, error: '口令超长' };
   let body;
   try {
-    body = JSON.parse(zlib.inflateRawSync(Buffer.from(b64, 'base64url')).toString('utf8'));
+    const chunks = [];
+    let total = 0;
+    const infl = zlib.inflateRawStream ? zlib.inflateRawStream() : zlib.createInflateRaw();
+    const done = new Promise((resolve, reject) => {
+      infl.on('data', (c) => { total += c.length; if (total > 64 * 1024) { infl.destroy(); reject(new Error('too large')); } else chunks.push(c); });
+      infl.on('end', () => resolve());
+      infl.on('error', reject);
+    });
+    infl.end(Buffer.from(b64, 'base64url'));
+    await done;
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     return { ok: false, error: '口令内容无法解压解析' };
   }

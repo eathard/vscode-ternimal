@@ -306,9 +306,14 @@ app.on('activate', () => {
   if (!process.env.TERNIMAL_HEADLESS_TEST) createWindow();
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (e) => {
   // Covers Ctrl-C / OS logout paths; idempotent with shutdown().
+  // P1：必须 preventDefault + 等待完成再真正退出——否则 Electron 可在
+  // relay.stopForShutdown()/registry.killAll()/handleExitClearMaster()
+  // 半途撕掉进程，clearMasterCodeOnExit 的退出清除保证被静默跳过。
   if (!shuttingDown) {
-    void shutdown();
+    e.preventDefault();
+    // shutdown() 自己管理 shuttingDown 标志；完成后再放行真正的退出。
+    void shutdown().finally(() => app.quit());
   }
 });

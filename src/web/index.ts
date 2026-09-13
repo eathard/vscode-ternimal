@@ -176,6 +176,15 @@ function wireAutoAdapt(app: TerminalApp): void {
     claimedId = null;
     claimActive();
   };
+  // P1：重连后所有权状态失步自愈——断线时服务端 dropClient 并广播
+  // owner=local，但重连客户端错过该广播，chip/所有权停留 stale-true。
+  // 每次认证就绪（ready）先清空本地所有权认知，再对当前活跃标签重新
+  // 申请（服务端 claim 幂等）。
+  transport.onRelayState((state) => {
+    if (state !== 'ready') return;
+    claimedId = null;
+    claimActive();
+  });
 }
 
 /**

@@ -53,6 +53,14 @@ t('host 4005 AUTH_DENIED → client 4001 (fatal passthrough)', code === 4001);
 const code2 = await attempt(4002);
 t('host 4002 RATE_LIMITED → client 4002 (fatal passthrough)', code2 === 4002);
 
+// P1 决策表补全回归：
+const code4001 = await attempt(4001);
+t('host 4001 AUTH_REQUIRED → client 4001 (fatal: client defect, no retry)', code4001 === 4001);
+const code4003 = await attempt(4003);
+t('host 4003 NO_SESSION → client 1000 (transient by design: reconnect heals)', code4003 === 1000);
+const code4004 = await attempt(4004);
+t('host 4004 BAD_MESSAGE → client 1000 (transient by design: self-limiting)', code4004 === 1000);
+
 await server.stop();
 console.log(`storm-regression: ${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

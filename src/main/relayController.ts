@@ -243,8 +243,8 @@ export class RelayController {
   }
 
   /** 混合口令预览：解码出摘要（主码掩码），不写任何状态——应用前的人工核对步骤。 */
-  previewToken(token: string): RelayTokenPreview {
-    const r = decodeRelayToken(String(token ?? ''));
+  async previewToken(token: string): Promise<RelayTokenPreview> {
+    const r = await decodeRelayToken(String(token ?? ''));
     if (!r.ok) throw new Error(r.error);
     const m = r.config.master;
     return {
@@ -258,7 +258,7 @@ export class RelayController {
 
   /** 混合口令应用：CA 落盘 userData/certs → 全字段 applySettings（持久化+插件即起）。 */
   async applyToken(token: string): Promise<RelaySettingsDto> {
-    const r = decodeRelayToken(String(token ?? ''));
+    const r = await decodeRelayToken(String(token ?? ''));
     if (!r.ok) throw new Error(r.error);
     let caPath = '';
     if (r.config.ca) {

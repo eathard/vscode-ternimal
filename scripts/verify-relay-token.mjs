@@ -46,9 +46,9 @@ const j = (r) => r.json();
 
 console.log('B-09 access token (tconf_v1)');
 
-await test('T-01 编解码往返：url/主码/CA/E2EE 完整保真', () => {
+await test('T-01 编解码往返：url/主码/CA/E2EE 完整保真', async () => {
   const tok = encodeAccessToken({ url: 'https://1.2.3.4/', master: 'trelay_v1_ABC', caPem: PEM, label: 'L' });
-  const d = decodeAccessToken(tok);
+  const d = await decodeAccessToken(tok);
   assert.equal(d.ok, true);
   assert.equal(d.config.url, 'https://1.2.3.4');
   assert.equal(d.config.master, 'trelay_v1_ABC');
@@ -56,14 +56,14 @@ await test('T-01 编解码往返：url/主码/CA/E2EE 完整保真', () => {
   assert.equal(d.config.e2ee, true);
 });
 
-await test('T-02 防截断/防篡改/防伪造：三者均拒绝且文案可读', () => {
+await test('T-02 防截断/防篡改/防伪造：三者均拒绝且文案可读', async () => {
   const tok = encodeAccessToken({ url: 'https://a.b', master: 'trelay_v1_X' });
-  assert.equal(decodeAccessToken(tok.slice(0, -3)).ok, false);
+  assert.equal((await decodeAccessToken(tok.slice(0, -3))).ok, false);
   const i = tok.indexOf('_') + 1; // 前缀后第一个 b64 字符
   const evil = tok.slice(0, i) + (tok[i] === 'A' ? 'B' : 'A') + tok.slice(i + 1);
-  assert.equal(decodeAccessToken(evil).ok, false);
-  assert.equal(decodeAccessToken('trelay_v1_not_a_token').ok, false);
-  assert.match(decodeAccessToken(tok.slice(0, -3)).error, /截断|校验/);
+  assert.equal((await decodeAccessToken(evil)).ok, false);
+  assert.equal((await decodeAccessToken('trelay_v1_not_a_token')).ok, false);
+  assert.match((await decodeAccessToken(tok.slice(0, -3))).error, /截断|校验/);
 });
 
 await test('T-03 PUT/GET /api/admin/access：绑定地址+CA，落盘持久化', async () => {
@@ -108,7 +108,7 @@ await test('T-04 POST /api/admin/token：未知主码 404；有效主码出口�
   const nf = await http(p2, '/api/admin/token', { method: 'POST', headers: H, body: '{"code":"trelay_v1_unknown"}' });
   assert.equal(nf.status, 404);
   const ok = await j(await http(p2, '/api/admin/token', { method: 'POST', headers: H, body: JSON.stringify({ code: master }) }));
-  const d = decodeAccessToken(ok.token);
+  const d = await decodeAccessToken(ok.token);
   assert.equal(d.ok, true);
   assert.equal(d.config.master, master);
   assert.equal(d.config.url, 'https://4.4.4.4');
@@ -128,7 +128,7 @@ await test('T-05 签发主码即附带口令（一购即得）', async () => {
   const lg = await j(await http(p2, '/api/admin/login', { method: 'POST', body: '{"password":"pw5"}' }));
   const iss = await j(await http(p2, '/api/admin/masters', { method: 'POST', headers: { authorization: `Bearer ${lg.token}`, 'content-type': 'application/json' }, body: '{"label":"t5","days":30}' }));
   assert.ok(iss.token, '签发响应应带 token');
-  const d = decodeAccessToken(iss.token);
+  const d = await decodeAccessToken(iss.token);
   assert.equal(d.ok, true);
   assert.equal(d.config.master, iss.code);
   await srv2.stop();

@@ -34,9 +34,17 @@ import { encodeAccessToken, caFingerprint } from './token.mjs';
  * 见 splice() 内 hostWs 'close' 处理的注释（2026-09-12 重连风暴事故）。
  * 宿主码表见 src/shared/wsProtocol.ts；中继码表见 protocol.mjs CLOSE。
  */
+// 宿主 4xxx → 中继客户端关闭码。**只映射终局性（同凭据重试必败且有害）
+// 的码**；3001/4003/4004 刻意保持瞬态（重连可自愈或属协议误序自限）：
+//   4001 AUTH_REQUIRED → 4001（认证窗口内业务帧=客户端缺陷，重试=风暴源）
+//   4002 RATE_LIMITED  → 4002（锁定窗重试会续期锁，必须停）
+//   4003 NO_SESSION    → 不映射（宿主重启后重连取新 tabs 即自愈）
+//   4004 BAD_MESSAGE   → 不映射（单帧违规，重连无害且可能来自误序）
+//   4005 AUTH_DENIED   → 4001（凭据错误）
 const HOST_FATAL_TO_RELAY = {
-  4002: 4002, // host RATE_LIMITED → relay RATE_LIMITED（致命）
-  4005: 4001, // host AUTH_DENIED → relay BAD_CODE（致命：凭据错误）
+  4001: 4001,
+  4002: 4002,
+  4005: 4001,
 };
 
 const CONTENT_TYPES = {
@@ -281,6 +289,8 @@ export class RelayServer {
     const ip = this.clientIp(req);
     this.firstFrameGuard(ws, (raw) => {
       const msg = parseControlFirst(raw);
+      // P1：锁定期零处理（同 join 路径）。
+      if (this.byIp.isLocked(ip)) return this.errorThenClose(ws, CLOSE.RATE_LIMITED, 'rate limited');
       if (!msg || msg.type !== CTRL.REGISTER) {
         this.byIp.fail(ip); this.byKey.fail('control');
         return this.errorThenClose(ws, CLOSE.BAD_MESSAGE, 'expected register');
@@ -379,6 +389,12 @@ export class RelayServer {
 
   /** 解析并登记 join；返回早期帧接收函数（null = 已拒绝）。 */
   handleJoinFrame(ws, req, ip, raw) {
+    // P1：锁定期内不做任何表扫描/解析——错码洪峰下锁定 IP 曾继续
+    // 烧 O(全部子码) 扫描（CPU/堆 DoS）。直接 429。
+    if (this.byIp.isLocked(ip)) {
+      this.errorThenClose(ws, CLOSE.RATE_LIMITED, 'rate limited');
+      return null;
+    }
     const msg = parseJoinFirst(raw);
     if (!msg) {
       this.byIp.fail(ip); this.byKey.fail('join');
@@ -727,7 +743,10 @@ export class RelayServer {
       const h = req.headers.authorization ?? '';
       const code = h.startsWith('Bearer ') ? h.slice(7) : '';
       if (!this.verifyMaster(code)) {
-        this.byIp.fail(ip);
+        // P1：管理页持有的是 admin 会话令牌（非主码）——对子码管理等
+        // 管理 API 而言这是合法凭据，不得计入主码失败（否则 5 次/60s
+        // 管理操作就把自己锁成 429）。仅当两者皆非时才记失败。
+        if (!this.adminOk(req)) this.byIp.fail(ip);
         return null;
       }
       return deriveChannelId(code);

@@ -116,6 +116,8 @@ export class RemoteServer {
   private clients: Set<ClientState> = new Set();
   /** B+ 几何所有权仲裁（'local' = Electron 窗口）。 */
   readonly geo = new GeoArbiter();
+  /** P1：force 申请限流（key=`clientId:sessionId` → 上次毫秒）。 */
+  private readonly geoForceLast = new Map<string, number>();
   private nextClientId = 1;
   private geoLocalBroadcast: ((msg: WsGeoOwnershipMsg) => void) | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
@@ -384,6 +386,7 @@ export class RemoteServer {
       if (client.authDeadline) clearTimeout(client.authDeadline);
       this.clients.delete(client);
       // B+：断开的 web 持有者释放所有权，桌面端回到原生尺寸。
+      this.dropGeoForce(client.id);
       for (const { id } of this.geo.dropClient(client.id)) {
         this.broadcastGeo(id);
       }
@@ -391,6 +394,7 @@ export class RemoteServer {
     ws.on('error', () => {
       if (client.authDeadline) clearTimeout(client.authDeadline);
       this.clients.delete(client);
+      this.dropGeoForce(client.id);
       for (const { id } of this.geo.dropClient(client.id)) {
         this.broadcastGeo(id);
       }
@@ -523,14 +527,44 @@ export class RemoteServer {
           } as WsErrorMsg);
           return;
         }
+        // P1-安全：远程侧 create 的 shell/cwd 是不可信输入——校验 shell
+        // 必须是本机存在的绝对路径可执行文件（faccessSync X_OK），cwd
+        // 必须是已存在的目录（realpath 收敛相对段）。攻击面：任意二进制
+        // 以完整主进程环境执行。
+        if (typeof msg.shell === 'string' && msg.shell.length > 0) {
+          if (!path.isAbsolute(msg.shell) || msg.shell.length > 256) {
+            this.sendTo(client, { type: 'error', code: WS.ERROR_CODES.BAD_MESSAGE, message: `invalid shell path` } as WsErrorMsg);
+            return;
+          }
+          try { fs.accessSync(msg.shell, fs.constants.X_OK); }
+          catch {
+            this.sendTo(client, { type: 'error', code: WS.ERROR_CODES.BAD_MESSAGE, message: `shell not executable: ${msg.shell}` } as WsErrorMsg);
+            return;
+          }
+        }
+        if (typeof msg.cwd === 'string' && msg.cwd.length > 0) {
+          try {
+            const st = fs.statSync(fs.realpathSync(msg.cwd));
+            if (!st.isDirectory()) throw new Error('not a directory');
+          } catch {
+            this.sendTo(client, { type: 'error', code: WS.ERROR_CODES.BAD_MESSAGE, message: `invalid cwd` } as WsErrorMsg);
+            return;
+          }
+        }
         try {
           const info = this.registry.create({ cols: 80, rows: 24, shell: msg.shell, cwd: msg.cwd });
           // B+：web 创建的会话，创建端即时持有几何所有权（随后首个 resize
           // 落地即同步本端尺寸）。失败不影响会话本身。
           this.geo.claim(info.id, client.id, { force: true });
         } catch (err) {
+          // P1：失败必须告知请求方——静默吞掉=web 用户点新标签页无任何反馈。
           // eslint-disable-next-line no-console
-          console.error(`[RS:debug] create THREW:`, (err as Error).stack ?? err);
+          console.error('[RemoteServer] remote create failed:', (err as Error).stack ?? err);
+          this.sendTo(client, {
+            type: 'error',
+            code: WS.ERROR_CODES.BAD_MESSAGE,
+            message: `create failed: ${(err as Error).message}`,
+          } as WsErrorMsg);
         }
         return;
       }
@@ -564,6 +598,12 @@ export class RemoteServer {
       }
       case 'detach':
         client.attached.delete(msg.id);
+        // P1：不再观察的会话不应保留几何所有权——否则断连前该会话一直
+        // 钉在 web 尺寸（无人观察却持有）。
+        {
+          const res = this.geo.release(msg.id, client.id);
+          if (res.changed) this.broadcastGeo(msg.id);
+        }
         return;
       case 'input':
         if (client.attached.has(msg.id)) {
@@ -584,6 +624,18 @@ export class RemoteServer {
         }
         return;
       case 'geo-claim': {
+        // P1-防滥用：申请者必须已 attach 该会话（防未观察即抢占），会话
+        // 必须真实存在（防垃圾 id 无限增殖 arbiter 表），force 申请按
+        // 客户端×会话限流（≥2s，防双端对轰 ping-pong 战争）。
+        if (!client.attached.has(msg.id)) return;
+        if (!this.registry.list().some((s) => s.id === msg.id)) return;
+        if (msg.force === 1) {
+          const now = Date.now();
+          const key = `${client.id}:${msg.id}`;
+          const last = this.geoForceLast.get(key) ?? 0;
+          if (now - last < 2_000) return;
+          this.geoForceLast.set(key, now);
+        }
         // B+ 所有权流动：非 force 申请须满足「桌面未聚焦 + 5s 驻留」。
         const res = this.geo.claim(msg.id, client.id, { force: msg.force === 1 });
         if (res.changed) this.broadcastGeo(msg.id);
@@ -635,7 +687,9 @@ export class RemoteServer {
         .then(async () => {
           const wire = await sealFrame(client.e2eeKey as CryptoKey, encodeServerMessage({ type: 'error', code, message } as WsErrorMsg));
           this.rawSend(client, wire);
-          client.ws.close(1008, message);
+          // P1：关闭码携带语义（4xxx）而非 1008——中继侧 HOST_FATAL_TO_RELAY
+          // 依赖它翻译终局性关闭；错误帧仍是第一防线，此为纵深第二道。
+          client.ws.close(code, message);
         })
         .catch(() => {
           try {
@@ -648,7 +702,8 @@ export class RemoteServer {
     }
     try {
       this.sendTo(client, { type: 'error', code, message } as WsErrorMsg);
-      client.ws.close(1008, message);
+      // P1：语义关闭码（见上）。
+      client.ws.close(code, message);
     } catch {
       client.ws.terminate();
     }
@@ -705,6 +760,14 @@ export class RemoteServer {
   }
 
   // ---------- heartbeat + slow-client sweeps ----------
+
+  /** P1：客户端断开时清掉它的 force 限流记录（防 Map 无界增长）。 */
+  private dropGeoForce(clientId: string): void {
+    const prefix = `${clientId}:`;
+    for (const key of this.geoForceLast.keys()) {
+      if (key.startsWith(prefix)) this.geoForceLast.delete(key);
+    }
+  }
 
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {

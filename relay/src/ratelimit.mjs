@@ -13,6 +13,7 @@ export class RateLimiter {
     this.windowMs = opts.windowMs ?? 60_000;
     this.lockMs = opts.lockMs ?? 60_000;
     this.maxFailures = opts.maxFailures ?? 5;
+    this.maxKeys = opts.maxKeys ?? 10_000; // 记录数上限（防内存 DoS）
     /** @type {Map<string, {failures: number, windowStart: number, lockedUntil: number}>} */
     this.recs = new Map();
   }
@@ -37,6 +38,9 @@ export class RateLimiter {
     const now = Date.now();
     let rec = this.recs.get(key);
     if (!rec || now - rec.windowStart >= this.windowMs) {
+      // P1：插入前顺手驱逐过期记录——伪造 XFF/海量错子码曾可无限增殖
+      // recs 造成内存 DoS（配合锁定早退后 CPU 也不再被烧）。
+      if (this.recs.size >= this.maxKeys) this.evictExpired(now);
       rec = { failures: 0, windowStart: now, lockedUntil: 0 };
       this.recs.set(key, rec);
     }
@@ -48,5 +52,21 @@ export class RateLimiter {
       return true;
     }
     return false;
+  }
+
+  /** 驱逐「窗口与锁均已过期」的记录；满了仍超限则按最旧窗口淘汰。 */
+  evictExpired(now = Date.now()) {
+    for (const [k, rec] of this.recs) {
+      const dead = now - rec.windowStart >= this.windowMs && rec.lockedUntil <= now;
+      if (dead) this.recs.delete(k);
+    }
+    while (this.recs.size >= this.maxKeys) {
+      let oldestKey = null, oldest = Infinity;
+      for (const [k, rec] of this.recs) {
+        if (rec.windowStart < oldest) { oldest = rec.windowStart; oldestKey = k; }
+      }
+      if (oldestKey === null) break;
+      this.recs.delete(oldestKey);
+    }
   }
 }

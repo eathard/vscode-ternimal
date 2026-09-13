@@ -2,17 +2,9 @@ const { contextBridge, ipcRenderer, clipboard } = require('electron');
 import { IPC, type RelaySettingsDto } from '../shared/ipcChannels';
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  invoke: (channel: string, ...args: unknown[]) => {
-    return ipcRenderer.invoke(channel, ...args);
-  },
-  send: (channel: string, ...args: unknown[]) => {
-    ipcRenderer.send(channel, ...args);
-  },
-  on: (channel: string, callback: (...args: unknown[]) => void) => {
-    const subscription = (_event: unknown, ...args: unknown[]) => callback(...args);
-    ipcRenderer.on(channel, subscription);
-    return () => ipcRenderer.removeListener(channel, subscription);
-  },
+  // P1-安全：不再暴露裸 ipcRenderer.invoke/send/on 通用桥——那等于把
+  // 全部主进程通道（PTY_SPAWN 任意执行、RELAY_APPLY_TOKEN 写 CA 文件）
+  // 交给渲染层任何脚本。渲染层只经下方类型化包装访问。
   // Typed helpers
   ptySpawn: (request: { shell?: string; cwd?: string; cols: number; rows: number }) => {
     return ipcRenderer.invoke(IPC.PTY_SPAWN, request);

@@ -18,8 +18,8 @@ export type RelayTokenResult =
   | { ok: true; config: RelayTokenConfig }
   | { ok: false; error: string };
 
-export function decodeRelayToken(raw: string): RelayTokenResult {
-  return decodeAccessToken(raw) as RelayTokenResult;
+export async function decodeRelayToken(raw: string): Promise<RelayTokenResult> {
+  return (await decodeAccessToken(raw)) as RelayTokenResult;
 }
 
 export function relayCaFingerprint(pem: string): string | null {

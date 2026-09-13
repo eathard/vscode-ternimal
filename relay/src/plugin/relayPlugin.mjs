@@ -279,7 +279,20 @@ function splice(pipe, clientId, earlyFromRelay = [], earlyFromLocal = []) {
     parent.post({ type: 'pipe-closed', clientId, why, pipes: pipes.size });
   };
   relayWs.once('close', () => done('relay closed'));
-  localWs.once('close', () => done('local closed'));
+  localWs.once('close', (code, reason) => {
+    // P1：宿主 failWith 以 4xxx 语义关闭时把码透传给中继侧——
+    // server.mjs 的 HOST_FATAL_TO_RELAY 才有机会命中。此前一律
+    // close(1000)，翻译表永不生效，错误帧成了唯一防线。
+    if (code >= 4000 && code <= 4999) {
+      if (pipe.closed) return;
+      pipe.closed = true;
+      pipes.delete(pipe);
+      try { relayWs.close(code, String(reason || 'host fatal')); } catch { try { relayWs.terminate(); } catch { /* gone */ } }
+      parent.post({ type: 'pipe-closed', clientId, why: `local closed ${code}`, pipes: pipes.size });
+      return;
+    }
+    done('local closed');
+  });
   relayWs.once('error', () => done('relay error'));
   localWs.once('error', () => done('local error'));
 }
