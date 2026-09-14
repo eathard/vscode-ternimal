@@ -1,6 +1,10 @@
 # Ternimal
 
 <p align="center">
+  🌐 <a href="https://vscode-ternimal.github.io">vscode-ternimal.github.io</a>
+</p>
+
+<p align="center">
   <b>Multi-tab terminal that shares its sessions with any browser on your LAN — scan a QR code and your phone is attached to the same tabs the desktop shows.</b><br>
   <b>多标签终端：扫码即把桌面上的同一组标签共享给局域网内任意浏览器</b>
 </p>
