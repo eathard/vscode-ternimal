@@ -1,6 +1,6 @@
 {
   "name": "ternimal",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Multi-tab terminal whose sessions are shared with any LAN browser \u2014 QR sign-in, replay-on-reconnect, mobile soft keyboard (Electron + xterm.js + node-pty)",
   "main": "dist/main/main.js",
   "scripts": {
