@@ -215,10 +215,18 @@ html, body {
   z-index: 1000;
 }
 
-.rs-panel {
+/* 尺寸约束与滚动分离：wrap 承担定位锚（角标）与尺寸，panel 只滚动 */
+.rs-panelwrap {
+  position: relative; /* rs-version 角标锚点（不滚动） */
   width: 720px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+}
+
+.rs-panel {
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -230,6 +238,18 @@ html, body {
   color: #d4d4d4;
   font-family: system-ui, sans-serif;
   font-size: 13px;
+}
+
+/* 版本角标：面板右下角，弱化不抢焦点 */
+.rs-version {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  font-size: 11px;
+  color: #6a6a6a;
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
 }
 
 /* GitHub 页脚徽章：白底深色图文，面板底部居中 */

@@ -7,6 +7,7 @@
 // 结构：全屏遮罩 + 表单（开关/地址/主码/双开/退出清除）+ 状态行 + 分享链接
 // 生成区 + 已签发子码列表（吊销）。所有文案走 i18n。
 import { t, detectLocale } from '../shared/i18n';
+import { version as appVersion } from '../../package.json';
 import type {
   RelaySettingsDto,
   RelayStatusEvent,
@@ -350,7 +351,15 @@ function buildPanel(): HTMLElement {
   ghBox.appendChild(ghLink);
   panel.appendChild(ghBox);
 
-  root.appendChild(panel);
+  // ---- 版本角标：面板右下角（package.json 单一事实源，webpack 内联）。
+  // 注意挂在外层 wrap 而非 panel 本体：panel 是 overflow-y:auto 滚动容器，
+  // absolute 子元素会钉在【内容底】随内容滚走；wrap 不滚动，角标恒在
+  // 可视区右下角。 ----
+  const wrap = el('div', 'rs-panelwrap');
+  wrap.appendChild(panel);
+  wrap.appendChild(el('div', 'rs-version', `v${appVersion}`));
+
+  root.appendChild(wrap);
   root.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closePanel();
   });
