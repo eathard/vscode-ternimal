@@ -33,6 +33,13 @@ deb:
 files:
   - dist/**/*
   - node_modules/node-pty/**/*
+  # 防御：构建机 dist/ 若残留旧时代产物（1.0.0 曾以 dist 为输出目录，
+  # 遗留 win-unpacked/ 592MB + 旧 exe 175MB），会被 dist/**/* 忠实打进
+  # asar（v1.2.1 Windows 曾因此膨胀到 438MB）。显式排除安装器类产物。
+  - "!dist/win-unpacked"
+  - "!dist/*.exe"
+  - "!dist/*.exe.blockmap"
+  - "!dist/builder-debug.yml"
   - "!vscode-src"
   - "!release"
 afterPack: ./build/afterPack.js
