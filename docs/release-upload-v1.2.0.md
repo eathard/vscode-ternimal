@@ -42,3 +42,11 @@ WebGL/几何修复、帮助按钮等条目；建议在文首追加一行「v1.2.
 
 - 无 gh CLI/PAT，故需网页手动上传；若提供 PAT，可一条命令完成：
   `gh release create v1.2.0 release/ternimal_1.2.0_amd64.deb release/Ternimal-1.2.0.AppImage --title "Ternimal v1.2.0" --notes-file docs/release-notes-v1.2.0.md`
+
+---
+
+## v1.2.1 追记（2026-09-14）
+
+- 发布页 /releases/tag/v1.2.1；三资产公网 md5 与本地一致（deb 40fa93d7 / AppImage a2bfd19b / exe 9340d0b5，exe 83.0MB）
+- **Windows 体积事故与防御**：构建机 dist/ 残留 1.0.0 时代产物（win-unpacked 592MB + 旧 exe 175MB）被 `files: dist/**/*` 打进 asar，首版 exe 膨胀至 438MB；已清残留重打包并在 electron-builder.yml 增加排除（`!dist/win-unpacked`、`!dist/*.exe*` 等），提交 1c85d00
+- CDP 上传要点：资产必须挂 `.js-upload-release-file input[type=file]`（正文编辑器附件输入会走 RepositoryFile 白名单 → 422）
