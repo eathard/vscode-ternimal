@@ -50,3 +50,17 @@ WebGL/几何修复、帮助按钮等条目；建议在文首追加一行「v1.2.
 - 发布页 /releases/tag/v1.2.1；三资产公网 md5 与本地一致（deb 40fa93d7 / AppImage a2bfd19b / exe 9340d0b5，exe 83.0MB）
 - **Windows 体积事故与防御**：构建机 dist/ 残留 1.0.0 时代产物（win-unpacked 592MB + 旧 exe 175MB）被 `files: dist/**/*` 打进 asar，首版 exe 膨胀至 438MB；已清残留重打包并在 electron-builder.yml 增加排除（`!dist/win-unpacked`、`!dist/*.exe*` 等），提交 1c85d00
 - CDP 上传要点：资产必须挂 `.js-upload-release-file input[type=file]`（正文编辑器附件输入会走 RepositoryFile 白名单 → 422）
+
+## 官网部署（vscode-ternimal.github.io，2026-09-14）
+
+```bash
+# website/ 是源；部署 = 复制到独立仓库推 main
+DEPLOY=/tmp/io-deploy && rm -rf $DEPLOY && mkdir -p $DEPLOY
+cp -r website/* $DEPLOY/ && cd $DEPLOY
+git init -q -b main && git add -A
+git -c user.name=eathard -c user.email=eathard@users.noreply.github.com commit -q -m "deploy: site"
+git remote add origin git@github.com:vscode-ternimal/vscode-ternimal.github.io.git
+git push -u origin main
+```
+- Pages 源：Deploy from a branch → main / (root)；构建不触发时推空提交即可重入队
+- 仓库需 public（私有仓库 Pages 要付费计划）；已核：website/ 无密钥/内网信息方可公开
