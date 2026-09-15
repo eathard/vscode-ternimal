@@ -64,3 +64,9 @@ git push -u origin main
 ```
 - Pages 源：Deploy from a branch → main / (root)；构建不触发时推空提交即可重入队
 - 仓库需 public（私有仓库 Pages 要付费计划）；已核：website/ 无密钥/内网信息方可公开
+
+## v1.3.0 发版记录（2026-09-15）
+
+- tag v1.3.0（1af3166）；三资产公网 md5=本地：deb a865a054 / AppImage d58fde1e / exe 846337f6（exe 83.1MB，取自 Windows build-13）
+- verify 全伞（分批补跑）：vitest 72/72 · registry 8/8 · ws-protocol 18/18 · reconnect 8/8 · relay 14/14 · relay-e2e 13/13 · matrix 6/6 · admin 11/11 · takeover 5/5 · token 6/6
+- 事故：verify 伞与打包/下载并行跑时 M-05 吞吐用例无限死等 35min（资源挤占）→ 已加 120s Promise.race 护栏

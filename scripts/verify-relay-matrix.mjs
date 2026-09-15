@@ -450,7 +450,14 @@ test('M-05 TC-R4-04 子集·容量：全链路 ≥3MB/s + relay 字节计数一�
       tp.input(created.id, CHUNK);
       if (i % 64 === 63) await sleep(0); // 让事件循环喘息，避免灌入端自阻塞
     }
-    await done;
+    // 吞吐护栏：裸机实测 ~17MiB/s，3MiB/s 阈值下 12MiB 应 <10s；给 120s
+    // 上限防资源挤占（并发打包/下载）时无限死等——v1.3.0 发版时曾挂 35min。
+    await Promise.race([
+      done,
+      sleep(120_000).then(() => {
+        throw new Error(`M-05 吞吐超时：120s 内仅回显 ${(received / 1048576).toFixed(1)} MiB / 12 MiB（机器资源被挤占或链路停滞）`);
+      }),
+    ]);
     const secs = (Date.now() - t0) / 1000;
     const mbps = received / 1024 / 1024 / secs;
     assert.ok(mbps >= 3, `吞吐 ${mbps.toFixed(1)} MiB/s ≥ 3 MiB/s（${(received / 1048576).toFixed(1)} MiB / ${secs.toFixed(2)}s）`);
