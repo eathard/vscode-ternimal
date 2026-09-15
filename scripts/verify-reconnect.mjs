@@ -9,7 +9,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import https from 'node:https';
-import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import ws from 'ws';
@@ -41,12 +40,6 @@ const { FakePtyHost } = await import(
 );
 
 const TOKEN = 'reconnect-token-32-chars-okay';
-
-function hashOf(password) {
-  const salt = crypto.randomBytes(16);
-  const hash = crypto.scryptSync(password, salt, 64, { N: 16384 });
-  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
-}
 
 function login(port, token) {
   return new Promise((resolve, reject) => {
@@ -102,7 +95,6 @@ function eventCollector() {
       const done = new Promise((r) => (resolveHit = r));
       const guard = setTimeout(() => {
         clearInterval(poll);
-        resolveHit = resolveHit; // keep ref
         resolveHit?.(undefined);
       }, timeoutMs);
       return withTimeout(

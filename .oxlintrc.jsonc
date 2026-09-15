@@ -1,0 +1,16 @@
+{
+  "ignorePatterns": [
+    "vscode-src/**",
+    "dist/**",
+    "release/**",
+    "web-dist/**"
+  ],
+  "rules": {
+    // OFF on purpose: for (const x of [...set]) is a LOAD-BEARING snapshot
+    // idiom in this codebase. kill()/close handlers mutate the same Set/Map
+    // mid-iteration, so iterating the live collection skips not-yet-visited
+    // entries (proven: converting relay/src/server.mjs reap loops to direct
+    // iteration hung verify-relay-matrix). Keep the rule off.
+    "unicorn/no-useless-spread": "off"
+  }
+}

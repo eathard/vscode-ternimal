@@ -63,6 +63,9 @@ const DEFAULT_REPLAY_BYTES = 1024 * 1024;
 // sends DA/XTVERSION/OSC-color queries on startup, so refresh used to
 // reproduce this every time). Strip every known query form at replay time.
 // (Responses never occur in the buffer: it mirrors PTY OUTPUT only.)
+// Control characters are the point here: these patterns must match terminal
+// query sequences byte-for-byte, so the no-control-regex lint is waived.
+// oxlint-disable eslint/no-control-regex
 const STALE_QUERY_PATTERNS: RegExp[] = [
   /\x1b\[[0-9;]*c/g, // Primary DA (incl. "ESC[c")
   /\x1b\[>[0-9;]*c/g, // Secondary DA
@@ -71,6 +74,7 @@ const STALE_QUERY_PATTERNS: RegExp[] = [
   /\x1b\[\??[0-9;]*\$p/g, // DECRQM
   /\x1b\](10|11|12);\?[^\x07\x1b]*(\x07|\x1b\\)/g, // OSC color QUERY
 ];
+// oxlint-enable eslint/no-control-regex
 
 function sanitizeReplay(data: string): string {
   let out = data;

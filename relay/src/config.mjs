@@ -56,7 +56,7 @@ export function loadConfig(file) {
   return {
     ...structuredClone(DEFAULT_CONFIG),
     ...raw,
-    limits: { ...DEFAULT_CONFIG.limits, ...(raw.limits ?? {}) },
+    limits: { ...DEFAULT_CONFIG.limits, ...(raw.limits) },
   };
 }
 

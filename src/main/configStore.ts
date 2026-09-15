@@ -59,7 +59,7 @@ export class ConfigStore {
     let cfg: AppConfig;
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      cfg = { ...DEFAULTS, ...raw, relay: { ...DEFAULTS.relay, ...(raw.relay ?? {}) } };
+      cfg = { ...DEFAULTS, ...raw, relay: { ...DEFAULTS.relay, ...(raw.relay) } };
     } catch {
       cfg = { ...DEFAULTS };
     }

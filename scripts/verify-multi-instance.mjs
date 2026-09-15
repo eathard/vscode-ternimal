@@ -18,15 +18,6 @@ import WebSocket from 'ws';
 
 const root = path.resolve(import.meta.dirname, '..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function pollFor(pred, label, timeoutMs = 30_000) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < timeoutMs) {
-    const v = await pred().catch(() => null);
-    if (v) return v;
-    await sleep(200);
-  }
-  throw new Error(`timeout: ${label}`);
-}
 
 let pass = 0, fail = 0;
 async function test(name, fn) {

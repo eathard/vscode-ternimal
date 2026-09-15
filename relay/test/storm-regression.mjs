@@ -7,7 +7,7 @@ import WebSocket from 'ws';
 
 const PORT = 18901;
 let pass = 0, fail = 0;
-const t = (name, ok) => { ok ? pass++ : fail++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`); };
+const t = (name, ok) => { if (ok) pass++; else fail++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`); };
 
 const server = new RelayServer({ port: PORT, host: '127.0.0.1', log: false, config: { masterHashes: [sha256Hex('trelay_v1_testhost')], limits: {} } });
 await server.start();

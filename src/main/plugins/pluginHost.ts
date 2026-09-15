@@ -145,7 +145,8 @@ export class RelayPluginHost extends (EventEmitter as new () => RelayPluginEvent
       const p = this.pending.get(id);
       if (p) {
         this.pending.delete(id);
-        msg['ok'] ? p.resolve(msg) : p.reject(new Error(String(msg['error'] ?? `status ${msg['status']}`)));
+        if (msg['ok']) p.resolve(msg);
+        else p.reject(new Error(String(msg['error'] ?? `status ${msg['status']}`)));
       }
       return;
     }

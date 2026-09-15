@@ -10,7 +10,7 @@
 
 | 层 | 手段 | 覆盖 |
 |----|------|------|
-| 单元/模块 | 自动化验证脚本 `scripts/verify-*.mjs`（Node 直跑，无框架依赖） | RingBuffer、SessionRegistry、限速器、配置模块 |
+| 单元/模块 | vitest 同目录单测（`npm test`；`src/**/*.test.ts`、`relay/src/**/*.test.mjs`） | RingBuffer、modifierKeys、i18n、AuthManager、CertManager、ConfigStore、tconf_v1 编解码、wsProtocol 编解码 |
 | 协议联调 | 自动化 WS 客户端脚本（`ws` 库扮演远程客户端） | WS 协议全消息、认证握手、重连重放 |
 | 端到端 | 手动测试用例（本表 §3–§5，含真实 Claude Code 会话） | 交互体验、移动端、生命周期 |
 | 回归 | 本地 Electron 全功能清单（§6） | 每里程碑必跑 |
@@ -29,18 +29,20 @@
 执行纪律：每个用例记录执行日期、执行人、结果、证据（截图/日志摘录/
 脚本输出），汇总入 `docs/test-reports/` 目录。
 
-## 2. 自动化验证脚本（交付物 D8）
+## 2. 自动化验证（交付物 D8）
 
-| 脚本 | 验证对象 | 判定 |
+**纯逻辑单元测试**：`npm test`（vitest，同目录 `*.test.ts`，秒级）；集成/进程型
+套件保留 `scripts/verify-*.mjs`（Node 直跑）：
+
+| 套件 | 验证对象 | 判定 |
 |------|----------|------|
-| `scripts/verify-ringbuffer.mjs` | 追加/超限丢弃/快照一致性/清空 | 断言全过，退出码 0 |
+| vitest（`npm test`） | RingBuffer、软键映射、i18n、AuthManager（登录/会话/限速/轮换）、CertManager、ConfigStore、tconf_v1 编解码、wsProtocol 编解码（含 caps 混版本） | 断言全过，退出码 0 |
 | `scripts/verify-registry.mjs` | create/kill/list/write/resize 钳制/事件次序/tabs 广播 | 同上 |
-| `scripts/verify-ratelimit.mjs` | 5 次/分阈值触发与 1 分钟解锁 | 同上 |
-| `scripts/verify-ws-protocol.mjs` | 未认证拒握手、list/attach/input/resize、畸形消息断链、心跳超时 | 同上 |
+| `scripts/verify-ws-protocol.mjs` | TLS+登录、未认证拒握手、list/attach/input/resize、畸形消息断链、心跳超时、慢客户端切断、静态文件穿越防御、auth-ok.caps 宣告 | 同上 |
 | `scripts/verify-reconnect.mjs` | 模拟断链→重连→attach→replay 与断链前输出衔接 | 同上 |
 |  `scripts/verify-browser-e2e.mjs` | **真浏览器全流程**（`npm run verify:browser`）：未认证重定向、鉴权页与指纹核对、错令牌/**二维码式 `#T=` 片段 URL 自动登录**、标签栏与 UI 按钮、cookie 三属性、xterm 键入→PTY→bash→渲染回显、**刷新后恢复且不新建标签、刷新零陈旧查询注入（无 `1;2c` 垃圾）**、软键盘真实 Ctrl+C 中断 sleep + 一次性复位、悬浮条位置稳定/拖动持久化/重载恢复、切标签清组合键；产截图 `docs/test-reports/screenshots/` | 同上 |
 
-脚本运行前置：`verify-ringbuffer/registry/ratelimit/ws-protocol/reconnect`
+脚本运行前置：`verify-registry/ws-protocol/reconnect`
 仅依赖 `node`（≥18）与仓库 `node_modules`，自起最小 Registry/Server 实例；
 `verify-browser-e2e` 额外需要系统 Chrome（puppeteer-core 驱动 CDP，
 `/usr/bin/google-chrome`）并自起真实 Electron 应用。
@@ -56,7 +58,7 @@
 | TC-M1-03 | 应用运行中开过标签 | 关闭整个应用窗口→重新 `npm run dev` | 标签列表恢复（listTabs 生效，PTY 已随退出销毁属预期，验证点是列表恢复不报错、空列表正常新建初始标签） |
 | TC-M1-04 | 两个标签 | 在标签 1 跑 `echo $TERM` | 输出 `xterm-256color`（spawn 环境变量不回归） |
 | TC-M1-05 | 跑 `claude` 的标签 | 观察 ≥5s | 标签标题随 Claude Code 进程名更新（修复既有 checkTitle 未定时调用缺陷） |
-| TC-M1-06 | — | `node scripts/verify-ringbuffer.mjs && node scripts/verify-registry.mjs` | 退出码 0 |
+| TC-M1-06 | — | `npm test && node scripts/verify-registry.mjs` | 退出码 0 |
 | TC-M1-07 | — | §6 本地回归清单全跑 | 全部通过 |
 
 **M1 验收门：TC-M1-01～07 全通过。**
@@ -177,3 +179,4 @@ SCENE-01 全流程（必须由需求方亲自执行）：
 |------|------|------|
 | v1.0 | 本次 | 初版，用例编号与计划书/技术方案书引用一致 |
 | v1.1 | 2026-09 | 追加 §9 多实例套件（--ternimal-instance 方案 B） |
+| v1.2 | 2026-09-15 | 纯逻辑套件迁 vitest（`npm test`，65→72 用例）；verify-ringbuffer/ratelimit/softkeys 退役；ws-protocol 增加 auth-ok.caps 断言；`npm run verify` = test + m1 + m2 + m4 + relay |

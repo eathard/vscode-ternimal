@@ -46,8 +46,6 @@ let control = null; // WebSocket | null
 let state = 'starting';
 let backoffMs = 1000;
 const pipes = new Set(); // { relayWs, localWs, closed }
-const pendingReqs = new Map(); // id → {resolve, reject}
-let reqSeq = 0;
 
 const LOOP_RETRIES_BEFORE_SLOW = 3;
 let connectAttempts = 0;
@@ -315,7 +313,7 @@ async function apiCall(method, pathname, body) {
       authorization: `Bearer ${cfg.masterCode}`,
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const json = await res.json().catch(() => ({}));
   return { status: res.status, ok: res.ok, ...json };

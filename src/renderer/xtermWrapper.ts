@@ -46,7 +46,7 @@ export class XtermWrapper implements IXtermWrapper {
       allowProposedApi: true,
       allowTransparency: false,
       theme: options?.theme as any,
-      wordSeparator: ' ()[]{}\'\"`,;:|',
+      wordSeparator: ' ()[]{}\'"`,;:|',
     });
 
     // Core addons - always loaded

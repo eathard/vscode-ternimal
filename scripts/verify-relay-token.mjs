@@ -69,7 +69,7 @@ await test('T-02 防截断/防篡改/防伪造：三者均拒绝且文案可读'
 await test('T-03 PUT/GET /api/admin/access：绑定地址+CA，落盘持久化', async () => {
   const cfgFile = path.join(tmp, 'relay-t3.json');
   const { server, port } = await makeRelay(cfgFile);
-  const login = await j(await http(port, '/api/admin/login', { method: 'POST', body: JSON.stringify({ password: 'root' }) })).catch(() => null);
+  await j(await http(port, '/api/admin/login', { method: 'POST', body: JSON.stringify({ password: 'root' }) })).catch(() => null);
   // 无 admin 密码配置 → 404/400（adminHash 未设）；改用 server.setAdmin? 直接用 opts.adminHash
   await server.stop();
   const srv2 = new RelayServer({
@@ -96,7 +96,7 @@ await test('T-03 PUT/GET /api/admin/access：绑定地址+CA，落盘持久化',
 await test('T-04 POST /api/admin/token：未知主码 404；有效主码出口令可解码含 CA', async () => {
   const cfgFile = path.join(tmp, 'relay-t4.json');
   const { server, master, port } = await makeRelay(cfgFile);
-  const lg = await j(await http(port, '/api/admin/login', { method: 'POST', body: '{"password":"x"}' })).catch(() => null);
+  await j(await http(port, '/api/admin/login', { method: 'POST', body: '{"password":"x"}' })).catch(() => null);
   await server.stop();
   const srv2 = new RelayServer({
     host: '127.0.0.1', port: 0, log: false, store: new MemoryStore(), configFile: cfgFile,
@@ -118,7 +118,7 @@ await test('T-04 POST /api/admin/token：未知主码 404；有效主码出口�
 
 await test('T-05 签发主码即附带口令（一购即得）', async () => {
   const cfgFile = path.join(tmp, 'relay-t5.json');
-  const { server, port } = await makeRelay(cfgFile);
+  const { server } = await makeRelay(cfgFile);
   await server.stop();
   const srv2 = new RelayServer({
     host: '127.0.0.1', port: 0, log: false, store: new MemoryStore(), configFile: cfgFile,
@@ -135,7 +135,7 @@ await test('T-05 签发主码即附带口令（一购即得）', async () => {
 });
 
 await test('T-06 管理鉴权：无 token 访问 access/token 均 401', async () => {
-  const { server, port } = await makeRelay(path.join(tmp, 'relay-t6.json'));
+  const { server } = await makeRelay(path.join(tmp, 'relay-t6.json'));
   await server.stop();
   const srv2 = new RelayServer({
     host: '127.0.0.1', port: 0, log: false, store: new MemoryStore(),

@@ -33,7 +33,8 @@ const waitHealthy = async () => {
 let pass = 0, fail = 0;
 const ok = (name, cond) => {
   console.log(`  ${cond ? 'PASS' : 'FAIL'}  ${name}`);
-  cond ? pass++ : fail++;
+  if (cond) pass++;
+  else fail++;
 };
 
 try {

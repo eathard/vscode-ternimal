@@ -195,7 +195,7 @@ await test('A-05 管理令牌代签 + 吊销 + 通道清理后总账不丢', asy
   const beforeBytes = ov1.channels[0].bytesIn + ov1.channels[0].bytesOut;
   assert.ok(beforeBytes > 0);
   plugin.kill('SIGKILL');
-  await sleep(70_000 > 0 ? 1_500 : 0); // 等 sweep（心跳周期内的 reap 由 close 立即触发）
+  await sleep(1_500); // 等 sweep（心跳周期内的 reap 由 close 立即触发）
   const ov2 = await fetch(`${BASE}/api/admin/overview`, { headers: { authorization: `Bearer ${adminTok}` } }).then((x) => x.json());
   const gone = ov2.channels.find((c) => c.id === cid);
   assert.ok(gone, '总账保留被清理通道');

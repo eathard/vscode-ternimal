@@ -19,7 +19,7 @@ import { WebSocket } from 'ws';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const {
-  newMasterCode, sha256Hex, deriveChannelId,
+  newMasterCode, sha256Hex,
 } = await import(pathToFileURL(path.join(root, 'relay/src/protocol.mjs')).href);
 const { MemoryStore } = await import(pathToFileURL(path.join(root, 'relay/src/store.mjs')).href);
 const { RelayServer } = await import(pathToFileURL(path.join(root, 'relay/src/server.mjs')).href);
@@ -80,7 +80,7 @@ async function hostDial(url, master) {
   const waiters = [];
   ws.on('message', (data) => {
     const m = JSON.parse(data.toString());
-    if (m.type === 'client-offer') (waiters.shift() ?? offers.push(m));
+    if (m.type === 'client-offer') { const w = waiters.shift(); if (w) w(m); else offers.push(m); }
   });
   return {
     ws, channelId: reg.channelId,
@@ -295,7 +295,7 @@ test('TC-R1-07 每通道 4 条管道，第 5 个 join → BUSY', async () => {
   const host = await hostDial(r.url, r.master);
   const { subCode } = await issueSubcode(r.http, r.master);
   for (let i = 0; i < 4; i++) {
-    const c = await clientJoin(r.url, subCode);
+    await clientJoin(r.url, subCode);
     const offer = await host.waitOffer();
     await hostPipe(r.url, r.master, offer.clientId);
     await sleep(30);
@@ -318,7 +318,7 @@ test('TC-R1-08 慢客户端背压：仅该管道终止，其余连接不受影�
   await sleep(50);
 
   // 第二对客户端（对照组，应存活）
-  const client2 = await clientJoin(r.url, subCode);
+  await clientJoin(r.url, subCode);
   const offer2 = await host.waitOffer();
   const pipe2 = await hostPipe(r.url, r.master, offer2.clientId);
   await sleep(50);
