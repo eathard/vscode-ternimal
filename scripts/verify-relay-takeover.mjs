@@ -1,14 +1,14 @@
 // B-08 意图抢占语义（方案一：踢人需人工意图，被踢者驻停 —— 战争结构性终止）
 // 覆盖：legacy last-wins 兼容 / 占用拒绝 / 强制接管+taken-over / 僵尸自动接管 / 占用后自愈
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
 
 const root = path.resolve(fileURLToPath(import.meta.url), '../..');
-const { MemoryStore } = await import(path.join(root, 'relay/src/store.mjs'));
-const { newMasterCode, sha256Hex } = await import(path.join(root, 'relay/src/protocol.mjs'));
-const { RelayServer } = await import(path.join(root, 'relay/src/server.mjs'));
+const { MemoryStore } = await import(pathToFileURL(path.join(root, 'relay/src/store.mjs')).href);
+const { newMasterCode, sha256Hex } = await import(pathToFileURL(path.join(root, 'relay/src/protocol.mjs')).href);
+const { RelayServer } = await import(pathToFileURL(path.join(root, 'relay/src/server.mjs')).href);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const opened = (ws) => new Promise((res, rej) => { ws.once('open', res); ws.once('error', rej); });

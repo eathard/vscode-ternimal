@@ -3,14 +3,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(fileURLToPath(import.meta.url), '../..');
-const { MemoryStore } = await import(path.join(root, 'relay/src/store.mjs'));
-const { newMasterCode, sha256Hex } = await import(path.join(root, 'relay/src/protocol.mjs'));
-const { RelayServer } = await import(path.join(root, 'relay/src/server.mjs'));
-const { encodeAccessToken, decodeAccessToken, caFingerprint } = await import(path.join(root, 'relay/src/token.mjs'));
-const { loadConfig } = await import(path.join(root, 'relay/src/config.mjs'));
+const { MemoryStore } = await import(pathToFileURL(path.join(root, 'relay/src/store.mjs')).href);
+const { newMasterCode, sha256Hex } = await import(pathToFileURL(path.join(root, 'relay/src/protocol.mjs')).href);
+const { RelayServer } = await import(pathToFileURL(path.join(root, 'relay/src/server.mjs')).href);
+const { encodeAccessToken, decodeAccessToken, caFingerprint } = await import(pathToFileURL(path.join(root, 'relay/src/token.mjs')).href);
+const { loadConfig } = await import(pathToFileURL(path.join(root, 'relay/src/config.mjs')).href);
 
 // 测试用自签证书（真实 X.509 结构，token.mjs 用 X509Certificate 解析指纹）
 import { execFileSync } from 'node:child_process';

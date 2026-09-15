@@ -209,8 +209,11 @@ test('ensureCertificate: generates valid X.509 with SANs; key mode 0600', async 
   assert.ok(san.includes('127.0.0.1'), 'IP SAN present');
 
   const keyFile = path.join(dir, 'ternimal-key.pem');
-  const mode = fs.statSync(keyFile).mode & 0o777;
-  assert.equal(mode, 0o600, 'private key not world-readable');
+  if (process.platform !== 'win32') {
+    // Windows has no POSIX permission bits: the read-only attribute maps to 0o666 regardless of the write mode.
+    const mode = fs.statSync(keyFile).mode & 0o777;
+    assert.equal(mode, 0o600, 'private key not world-readable');
+  }
 });
 
 test('ensureCertificate: second call reuses disk material with identical fingerprint', async () => {

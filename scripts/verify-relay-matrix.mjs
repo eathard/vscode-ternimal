@@ -38,8 +38,8 @@ const { FakePtyHost } = await import(pathToFileURL(path.join(root, 'scripts/lib/
 const { WebSocketTransport } = await import(
   pathToFileURL(path.join(root, 'dist/verify/renderer/transport/webSocketTransport.js')).href
 );
-const { newMasterCode, sha256Hex } = await import(path.join(root, 'relay/src/protocol.mjs'));
-const { RelayServer } = await import(path.join(root, 'relay/src/server.mjs'));
+const { newMasterCode, sha256Hex } = await import(pathToFileURL(path.join(root, 'relay/src/protocol.mjs')).href);
+const { RelayServer } = await import(pathToFileURL(path.join(root, 'relay/src/server.mjs')).href);
 
 const TOKEN = 'relay-matrix-token-32-chars-!!';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -371,20 +371,26 @@ test('M-04 TC-R4-04 子集·慢消费者背压 → 仅终止该客户端，不�
     slow.ws._socket?.setRecvBufferSize?.(64 * 1024);
     slow.ws.pause(); // 停读 → TCP 窗口关闭 → relay 侧 userspace 缓冲上升
 
-    // 节流洪泛 32MB（32KB × 1024）：留事件循环排空时间，确保积压只出现在
-    // relay→慢客户端一侧（而非 host→插件），触发 relay 硬 terminate。
-    // 32MB 是 loopback 内核缓冲自动调优（可达数 MB）之上的确定性余量。
-    const chunk = 'y'.repeat(32 * 1024);
-    for (let i = 0; i < 1024; i++) {
-      rs.host.write(id, chunk);
-      if (i % 8 === 7) await sleep(1);
-    }
-    // 洪泛后：relay 侧回收慢客户端管道（paused socket 无法就地观察
-    // terminate，以 relay 管道表为准——这也正是「不扩散」的直接证据）
+    // 洪泛期间以 relay 管道表为准观察回收（paused socket 无法就地观察
+    // terminate）——这也是「不扩散」的直接证据
     const pipeCount = () => {
       const ch = [...relay.server.store.channels.values()][0];
       return ch ? ch.pipes.size : 0;
     };
+    // 节流洪泛（32KB × 1024 上限，慢管道回收即止）：周期性让出事件循环，
+    // 确保积压只出现在 relay→慢客户端一侧（而非 host→插件），触发 relay 硬
+    // terminate。每次让出间的突发（2×32KB=64KB）必须 ≤ 内核 sndbuf 量级且
+    // 远小于 relay 背压阈值（256KB）：fwd 的「发→查→杀」在同一事件循环轮次
+    // 内同步执行，突发一旦逼近阈值，健康客户端的读事件来不及插队就会被误杀
+    //（Windows 定时器钳制 sleep(1)≈15ms 进一步放大 gulp 粒度）。
+    // 慢管道回收后立即停手：洪泛目的已达成，32MB 总量仅为 loopback 内核缓冲
+    // 自动调优之上的余量，回收后继续写只会空耗 Windows 上的测试时长。
+    const chunk = 'y'.repeat(32 * 1024);
+    for (let i = 0; i < 1024; i++) {
+      rs.host.write(id, chunk);
+      if (i % 2 === 1) await sleep(1);
+      if (pipeCount() === 1) break; // 仅慢管道被回收 → 成功路径提前收场
+    }
     await pollUntil(() => pipeCount() === 1, '慢客户端管道被背压回收（健康管道保留）', 30_000);
     // 慢客户端恢复读取后观察到断链（terminate 语义）
     slow.ws.resume();

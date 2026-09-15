@@ -45,8 +45,8 @@ const { deriveSessionKey, sealFrame, openFrame } = await import(
 );
 const {
   newMasterCode, sha256Hex,
-} = await import(path.join(root, 'relay/src/protocol.mjs'));
-const { RelayServer } = await import(path.join(root, 'relay/src/server.mjs'));
+} = await import(pathToFileURL(path.join(root, 'relay/src/protocol.mjs')).href);
+const { RelayServer } = await import(pathToFileURL(path.join(root, 'relay/src/server.mjs')).href);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const TOKEN = 'relay-e2e-token-32-chars-okk';

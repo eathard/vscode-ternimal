@@ -13,16 +13,16 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const {
   newMasterCode, sha256Hex, deriveChannelId,
-} = await import(path.join(root, 'relay/src/protocol.mjs'));
-const { MemoryStore } = await import(path.join(root, 'relay/src/store.mjs'));
-const { RelayServer } = await import(path.join(root, 'relay/src/server.mjs'));
+} = await import(pathToFileURL(path.join(root, 'relay/src/protocol.mjs')).href);
+const { MemoryStore } = await import(pathToFileURL(path.join(root, 'relay/src/store.mjs')).href);
+const { RelayServer } = await import(pathToFileURL(path.join(root, 'relay/src/server.mjs')).href);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const opened = (ws) => new Promise((res, rej) => {
