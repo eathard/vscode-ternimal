@@ -68,6 +68,7 @@ async function startServer(opts = {}) {
     slowClientBytes: opts.slowClientBytes ?? 8 * 1024 * 1024,
     webRoot: opts.webRoot,
     maxSessions: opts.maxSessions,
+    relayE2EE: true, // hostCaps=['e2ee'] → auth-ok.caps 可断言（wire-compat）
   });
   server.certFingerprint = tls.fingerprint;
   const port = await server.start();
@@ -322,7 +323,7 @@ test('unauthenticated pages redirect to /login', async () => {
 });
 
 test('TC-M3-04: unauthenticated WS upgrade rejected with 401', async () => {
-  const { server, port, url } = await startServer();
+  const { server, url } = await startServer();
   cleanups.push(() => server.stop());
   await expectUpgradeRejected(url, null, 401);
   await expectUpgradeRejected(url, 'deadbeef'.repeat(8), 401);
@@ -371,6 +372,7 @@ test('bootstrap: authenticated ws connect receives initial tabs', async () => {
   // 随后才是 tabs 快照。
   await waitFor(messages, (m) => m.type === 'auth-ok', 'auth-ok with clientId');
   assert.ok(typeof messages[0].clientId === 'string' && messages[0].clientId, 'clientId present');
+  assert.deepEqual(messages[0].caps, ['e2ee'], 'auth-ok.caps advertises host capabilities');
   await waitFor(messages, (m) => m.type === 'tabs', 'initial tabs');
   const tabsMsg = messages.find((m) => m.type === 'tabs');
   assert.equal(tabsMsg.tabs.length, 0);
@@ -528,7 +530,10 @@ test('stalled attached client gets cut (heartbeat/backpressure sweep, risk R2)',
 
   for (let i = 0; i < 200; i++) host.ptys.get(id).emitOutput('y'.repeat(10 * 1024));
 
-  await withTimeout(sockClosed, 5000, 'stalled client cut');
+  // 15s（非 5s）：Windows 全链负载下 sweep 定时器钳制 ~15ms + 2MB 同步洪泛
+  // 排空竞争 CPU，切断可能晚于 5s——断言的是「最终必被切」，不是具体时长
+  //（真实心跳 30s，这里的 80ms 本就是加速档）。
+  await withTimeout(sockClosed, 15_000, 'stalled client cut');
   assert.ok(true, 'stalled client cut');
 
   await waitFor(a.messages, (m) => m.type === 'data', 'healthy client still streaming');

@@ -243,6 +243,13 @@ export class WebSocketTransport implements TerminalTransport {
     return this.geoClientIdValue;
   }
 
+  /** host 能力宣告（auth-ok.caps，wire-compat 规则 1）。缺失 = 旧 host =
+   * 全部按关闭处理——新功能必须经 supportsCap gate 后再启用。 */
+  private hostCaps = new Set<string>();
+  supportsCap(cap: string): boolean {
+    return this.hostCaps.has(cap);
+  }
+
   claimGeometry(id: string, force?: boolean): void {
     this.send({ type: 'geo-claim', id, ...(force ? { force: 1 } : {}) });
   }
@@ -426,7 +433,8 @@ export class WebSocketTransport implements TerminalTransport {
       const sig = await subtle.sign('HMAC', key, enc.encode(nonce));
       const mac = Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('');
       this.relayNonce = nonce; // R-M4-B: 留作 HKDF salt
-      this.sendControl({ type: 'auth-response', mac, enc: 1 }); // enc 由 host 决定
+      // enc 由 host 决定；caps = 客户端能力宣告（wire-compat 协商通道）
+      this.sendControl({ type: 'auth-response', mac, enc: 1, caps: ['e2ee'] });
     } catch (err) {
       console.warn('[Ternimal] challenge answer failed:', err);
     }
@@ -510,7 +518,7 @@ export class WebSocketTransport implements TerminalTransport {
         this.lastTabs = tabs;
         for (const t of tabs) this.knownIds.add(t.id);
         const known = new Set(tabs.map((t) => t.id));
-        for (const id of [...this.attachedIds]) {
+        for (const id of this.attachedIds) {
           if (!known.has(id)) this.attachedIds.delete(id); // session gone
         }
         // Drain one-shot listTabs waiters
@@ -553,6 +561,8 @@ export class WebSocketTransport implements TerminalTransport {
       case 'auth-ok': {
         // B+：记录本连接 clientId（几何所有权广播对端标识）。
         if (typeof msg.clientId === 'string' && msg.clientId) this.geoClientIdValue = msg.clientId;
+        // wire-compat：host 能力宣告（重连后按新连接重置）。
+        this.hostCaps = new Set(Array.isArray(msg.caps) ? msg.caps.filter((c: unknown) => typeof c === 'string') : []);
         // R-M3 relay mode: gate open. The host pushes a tabs snapshot right
         // after; re-attach followed sessions (replay via `attached`).
         if (this.relay) {

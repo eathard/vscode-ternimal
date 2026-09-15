@@ -1,6 +1,17 @@
 // WS protocol (technical design §2.6) — shared between RemoteServer (main)
 // and WebSocketTransport (web client). JSON text frames, one envelope per
 // frame; field names stay aligned with the IPC payloads in ipcChannels.ts.
+//
+// WIRE COMPATIBILITY (docs/wire-compatibility.md) — web pages outlive app
+// updates, so mixed client/host versions are the NORMAL state:
+//   1. New OPTIONAL field on an existing frame: safe (old peers ignore it),
+//      but only for as long as every reader treats it as optional.
+//   2. A NEW frame type is NOT safe: old parseClientMessage returns null →
+//      BAD_MESSAGE disconnect; old client decoders silently drop it. Any new
+//      interaction must be gated behind the caps handshake below.
+//   3. Changing what a peer publishes (field stops being populated) is a
+//      wire change even when the codec does not move.
+//   Frame/message names are PERMANENT once shipped — never reuse or repurpose.
 
 import type { SessionInfo } from './ipcChannels';
 
@@ -99,6 +110,9 @@ export interface WsAuthResponseMsg {
   mac: string;
   /** R-M4-B：客户端请求 E2E 加密（能力宣告，由 host 决定是否启用）。 */
   enc?: 1;
+  /** 客户端能力宣告（wire-compat 规则 2 的协商通道）。可选；host 忽略
+   * 未知项。旧 host 的解析器本就丢弃未知字段，故本字段向后兼容。 */
+  caps?: string[];
 }
 
 export type ClientMessage =
@@ -157,6 +171,9 @@ export interface WsAuthOkMsg {
   enc?: 1;
   /** B+：本连接的客户端 id（几何所有权广播对端用它与 own 比对）。 */
   clientId?: string;
+  /** host 能力宣告（wire-compat 规则 1：可选字段，旧客户端自然忽略）。
+   * 新客户端在 caps 缺失时必须按「旧 host」降级——缺失即功能关闭。 */
+  caps?: string[];
 }
 
 export interface WsAuthChallengeMsg {
@@ -222,10 +239,17 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return typeof m.token === 'string'
         ? { type: 'auth', token: m.token }
         : null;
-    case 'auth-response':
-      return typeof m.mac === 'string'
-        ? { type: 'auth-response', mac: m.mac, ...(m.enc === 1 ? { enc: 1 as const } : {}) }
-        : null;
+    case 'auth-response': {
+      if (typeof m.mac !== 'string') return null;
+      const caps = parseCaps(m.caps);
+      if (caps === null) return null; // malformed caps → BAD_MESSAGE
+      return {
+        type: 'auth-response',
+        mac: m.mac,
+        ...(m.enc === 1 ? { enc: 1 as const } : {}),
+        ...(caps ? { caps } : {}),
+      };
+    }
     case 'secure':
       return typeof m.iv === 'string' && typeof m.ct === 'string'
         ? { type: 'secure', iv: m.iv, ct: m.ct }
@@ -251,4 +275,18 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 function optionalString(v: unknown): string | undefined {
   return typeof v === 'string' ? v : undefined;
+}
+
+/**
+ * Validate a caps announcement (wire-compat 规则 2 的协商通道). Returns
+ * undefined when absent, null when MALFORMED (caller rejects the frame):
+ * at most 16 entries, each a ≤32-char lowercase [a-z0-9-] token.
+ */
+export function parseCaps(v: unknown): string[] | null | undefined {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.length > 16) return null;
+  for (const entry of v) {
+    if (typeof entry !== 'string' || !/^[a-z0-9-]{1,32}$/.test(entry)) return null;
+  }
+  return v as string[];
 }

@@ -84,6 +84,9 @@ interface ClientState {
   e2eeKey: CryptoKey | null;
   /** R-M4-B: 加密发送链（Promise 串行，保证 seal 完成顺序 = 发送顺序）。 */
   e2eeQueue: Promise<void>;
+  /** 客户端能力宣告（auth-response.caps，wire-compat 协商通道；未知项
+   * 原样保留——由使用方按需检查，host 不解释）。 */
+  caps: string[];
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -378,6 +381,7 @@ export class RemoteServer {
       authNonce: null,
       e2eeKey: null,
       e2eeQueue: Promise.resolve(),
+      caps: [],
     };
     this.clients.add(client);
 
@@ -425,7 +429,7 @@ export class RemoteServer {
 
     // Zero-latency bootstrap: push the current tab list immediately.
     // B+：cookie 认证路径同样下发 clientId（web 端对 geo-ownership 广播比对 own）。
-    this.sendTo(client, { type: 'auth-ok', clientId: client.id } as WsAuthOkMsg);
+    this.sendTo(client, { type: 'auth-ok', clientId: client.id, ...(this.hostCaps.length ? { caps: this.hostCaps } : {}) } as WsAuthOkMsg);
     this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
     return client;
   }
@@ -500,6 +504,7 @@ export class RemoteServer {
           return;
         }
         client.authenticated = true;
+        if (msg.type === 'auth-response' && msg.caps) client.caps = msg.caps;
         if (client.authDeadline) {
           clearTimeout(client.authDeadline);
           client.authDeadline = null;
@@ -510,7 +515,7 @@ export class RemoteServer {
             .deriveRelaySessionKey(nonce)
             .then((key) => {
               client.e2eeKey = key;
-              this.sendTo(client, { type: 'auth-ok', enc: 1, clientId: client.id } as WsAuthOkMsg);
+              this.sendTo(client, { type: 'auth-ok', enc: 1, clientId: client.id, ...(this.hostCaps.length ? { caps: this.hostCaps } : {}) } as WsAuthOkMsg);
               this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
             })
             .catch(() => {
@@ -518,7 +523,7 @@ export class RemoteServer {
             });
           return;
         }
-        this.sendTo(client, { type: 'auth-ok', clientId: client.id } as WsAuthOkMsg);
+        this.sendTo(client, { type: 'auth-ok', clientId: client.id, ...(this.hostCaps.length ? { caps: this.hostCaps } : {}) } as WsAuthOkMsg);
         this.sendTo(client, { type: 'tabs', tabs: this.registry.list() } as WsTabsMsg);
         return;
       }
@@ -799,6 +804,12 @@ export class RemoteServer {
         }
       }
     }, this.heartbeatIntervalMs);
+  }
+
+  /** host 能力宣告（auth-ok.caps，wire-compat 规则 1 可选字段；空则省略
+   * 字段——与旧版本线上行为逐字节一致）。 */
+  private get hostCaps(): string[] {
+    return this.relayE2EE ? ['e2ee'] : [];
   }
 
   /** Backpressure-aware send: never throws, cuts slow clients instead. */
