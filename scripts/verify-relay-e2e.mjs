@@ -94,7 +94,7 @@ function jsonWs(url) {
 async function startRemoteServer(opts = {}) {
   const host = new FakePtyHost();
   const registry = new SessionRegistry({ ptyHost: host, replayBytes: 64 * 1024 });
-  const auth = opts.auth ?? new AuthManager({ accessToken: TOKEN, ...(opts.authOpts ?? {}) });
+  const auth = opts.auth ?? new AuthManager({ accessToken: TOKEN, ...(opts.authOpts) });
   const tls = await ensureCertificate(fs.mkdtempSync(path.join(os.tmpdir(), 'ternimal-e2e-cert-')));
   const server = new RemoteServer({
     registry, auth, tls, port: 0, host: '127.0.0.1',
