@@ -16,16 +16,21 @@ npm run build:renderer # Build renderer process only
 npm run rebuild      # electron-rebuild — REQUIRED after installing/upgrading Electron or node-pty (native module)
 npm run pack         # Build + electron-builder for Windows and Linux
 npm run pack:linux   # Build + Linux packages (AppImage + deb)
-npm run verify                # umbrella: m1+m3+m4+softkeys (exit 0/1)
-npm run verify:m1|m3|m4|browser|softkeys  # individual suites
+npm test             # vitest — collocated unit tests (src/**/*.test.ts, relay/src/**/*.test.mjs)
+npm run test:watch   # vitest watch mode
+npm run lint         # oxlint (report-only for now; .oxlintrc.jsonc)
+npm run verify                # umbrella: test + m1 + m2 + m4 + relay (exit 0/1)
+npm run verify:m1|m2|m4|browser|relay   # individual suites
 node scripts/smoke-e2e.mjs        # Real Electron + real bash + TLS e2e
 ```
 
-No linter — the quality gates are `tsc --noEmit` (strict + noUnusedLocals/
-noUnusedParameters/noImplicitOverride/noFallthroughCasesInSwitch) and the
-script suites (`N/M passed`, exit code 0/1) — see
-`docs/verification-standard.md`. Run the full matrix when touching the
-transport seam, registry, or remote server.
+Quality gates: `tsc --noEmit` (strict + noUnusedLocals/noUnusedParameters/
+noImplicitOverride/noFallthroughCasesInSwitch), vitest unit tests, and the
+integration suites in `scripts/verify-*.mjs` (`N/M passed`, exit code 0/1) —
+see `docs/verification-standard.md`. Pure-logic tests live NEXT to their
+sources as `foo.test.ts`; server/process-bound suites stay in scripts/.
+Run the full matrix when touching the transport seam, registry, or remote
+server. When changing the WS protocol, read `docs/wire-compatibility.md`.
 
 ## Architecture
 
@@ -87,19 +92,24 @@ LAN-IP SAN), `configStore.ts` (atomic JSON config), `tray.ts`.
 - Legacy clients (no proto field) keep last-wins for rolling upgrades. Zombie holders are detected by a 2.5s ping-probe on register.
 - Verify: `npm run verify:relay-takeover` (B-08). NOTE: dist/plugins/relayPlugin.mjs is a minified transform of the source — grep for identifiers there will false-negative.
 
-## Windows Packaging (on a real Windows box)
+## Platform references (read before touching)
 
-- Build natively on Windows when possible: `npm ci --ignore-scripts --registry=https://registry.npmmirror.com` then `npm run build` then `npx electron-builder --win nsis --x64 -c.npmRebuild=false`
-  - `--ignore-scripts` + `-c.npmRebuild=false`: node-pty ships win32-x64 prebuilds (N-API) that Electron loads as-is; skipping rebuild avoids needing VS Build Tools (verified end-to-end: ConPTY works in the shipped exe)
-- **3rd-party AV (Huorong/Lenovo) eats node_modules files mid-install** (random missing package.json / electron install.js). Add the project dir + electron cache to the AV trust zone before npm ci, or builds flake with `\\?\...` ENOENT errors
-- ssh-spawned GUI processes land in a hidden session (no desktop/tray) — use schtasks InteractiveToken or the user's own double-click for visible-window testing; sshd also kills the process tree when the session closes
-- PowerShell over ssh: nested `powershell -Command` eats `$vars` (double interpolation) — ship `.ps1` files instead; native stderr (npm warnings) becomes terminating errors with ErrorActionPreference=Stop
+- **Windows packaging / install-time scripts**: `docs/windows-packaging.md` —
+  native build flow, the AV/EDR behavioural posture (patterns that must never
+  appear in shipped or install-time scripts), ssh remote-testing limits
+- **VPS relay ops**: `docs/vps-ops.md` — deploy/restart, the sudo-CLI
+  config-ownership trap, admin-page-first ops, health checks
+- **WS protocol changes**: `docs/wire-compatibility.md` — mixed client/host
+  versions are the norm; optional fields safe, new frame types must negotiate
+  via the caps handshake in `wsProtocol.ts`
 
-## VPS relay ops gotchas (systemd unit `ternimal-relay`, User=ubuntu)
+## Electron UI validation discipline
 
-- **NEVER run `sudo node cli.mjs bind-access/add-master/…` against the live config**: saveConfig rewrites `relay-config.json` as `root:root 0600`, then the `ubuntu` service user silently loads NOTHING (loadConfig swallows EACCES → defaults: admin "not configured", masters gone, access unbound — relay keeps serving). Fix if hit: `sudo chown ubuntu:ubuntu relay-config.json && sudo systemctl restart ternimal-relay`. Run CLI ops as the service user (or chown afterwards).
-- Relay restarts clear subcodes/channels (memory-only): clients auto re-register, but users must regenerate tray share links.
-- Admin page ops (PUT access / mint token) are the SAFE path vs CLI on a root-owned config — they write via the running process, keeping ownership intact.
+Test-launched app instances must never steal focus or show windows: no
+`show()` / `showInactive()` / `bringToFront()` / `app.focus()` in test paths —
+launch backgrounded and verify renderers via CDP screenshots (see
+`scripts/smoke-e2e.mjs`). Visible-window / native-focus checks are
+interactive-only on the user's desktop, never agent-driven.
 
 ## Build & Platform Gotchas
 
