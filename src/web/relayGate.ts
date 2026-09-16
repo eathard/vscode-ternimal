@@ -19,6 +19,12 @@ export interface RelayCreds {
 
 /** '#S=<sub>&T=<tok>'（顺序不敏感，值需 URL 解码）。 */
 export function parseRelayHash(hash: string): RelayCreds | null {
+  const parts = parseHashParts(hash);
+  return parts.subCode && parts.token ? { subCode: parts.subCode, token: parts.token } : null;
+}
+
+/** v1.3.2：书签回访只需 #S=<sub>（令牌从钥匙串取）。S/T 均可缺。 */
+export function parseHashParts(hash: string): { subCode: string | null; token: string | null } {
   const params = new Map<string, string>();
   for (const part of hash.replace(/^#/, '').split('&')) {
     const eq = part.indexOf('=');
@@ -29,9 +35,7 @@ export function parseRelayHash(hash: string): RelayCreds | null {
       /* malformed escape — skip */
     }
   }
-  const subCode = params.get('S');
-  const token = params.get('T');
-  return subCode && token ? { subCode, token } : null;
+  return { subCode: params.get('S') ?? null, token: params.get('T') ?? null };
 }
 
 /** 探测当前页面是否由 relay 托管（RemoteServer 的 /health 是纯文本 'ok'）。 */
@@ -97,6 +101,44 @@ export class RelayGate {
     subInput.input.focus();
   }
 
+  /**
+   * v1.3.2：手输卡之上追加「已保存的电脑」列表（多主机书签场景）。
+   * 每行 = 掩码子码 + 剩余天数 + 连接 / 忘记。onPick/onForget 由调用方
+   * 接钥匙串。列表渲染在重新 showCard 时刷新。
+   */
+  appendSavedDevices(
+    devices: Array<{ subCode: string; daysLeft: number }>,
+    onPick: (subCode: string) => void,
+    onForget: (subCode: string) => void,
+  ): void {
+    if (!this.overlay || devices.length === 0) return;
+    const card = this.overlay.querySelector('.rg-card');
+    if (!card) return;
+
+    const section = document.createElement('div');
+    section.className = 'rg-saved';
+    section.appendChild(el('div', 'rg-saved-title', t(locale, 'relay.gate.saved.title')));
+    for (const dev of devices) {
+      const row = document.createElement('div');
+      row.className = 'rg-saved-row';
+      row.appendChild(el('span', 'rg-saved-sub', maskSubCode(dev.subCode)));
+      row.appendChild(el(
+        'span',
+        'rg-saved-days',
+        t(locale, 'relay.gate.saved.days').replace('{n}', String(dev.daysLeft)),
+      ));
+      const pick = el('button', 'rg-saved-btn', t(locale, 'relay.gate.saved.connect')) as HTMLButtonElement;
+      pick.addEventListener('click', () => onPick(dev.subCode));
+      const forget = el('button', 'rg-saved-btn rg-saved-forget', t(locale, 'relay.gate.saved.forget')) as HTMLButtonElement;
+      forget.addEventListener('click', () => onForget(dev.subCode));
+      row.appendChild(pick);
+      row.appendChild(forget);
+      section.appendChild(row);
+    }
+    section.appendChild(el('div', 'rg-saved-hint', t(locale, 'relay.gate.saved.hint')));
+    card.appendChild(section);
+  }
+
   /** 首次/初始连接中的全屏提示。 */
   showConnecting(): void {
     if (this.overlay) return; // 卡片之上不重复盖
@@ -125,8 +167,13 @@ export class RelayGate {
   }
 }
 
-function el(tag: string, className: string, text?: string): HTMLElement {
-  const node = document.createElement(tag);
+/** 子码掩码：保留首尾、中段折叠（列表展示用；子码非机密，仅为整洁）。 */
+function maskSubCode(sub: string): string {
+  if (sub.length <= 12) return sub;
+  return `${sub.slice(0, 8)}…${sub.slice(-4)}`;
+}
+
+function el(tag: string, className: string, text?: string): HTMLElement {  const node = document.createElement(tag);
   node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;

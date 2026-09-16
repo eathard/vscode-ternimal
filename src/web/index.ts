@@ -12,7 +12,8 @@ import { setTransport, getTransport } from '../renderer/transport';
 import { WebSocketTransport } from '../renderer/transport/webSocketTransport';
 import { TerminalApp } from '../renderer/terminalApp';
 import { mountSoftKeys } from './softKeys';
-import { RelayGate, parseRelayHash, pageServedByRelay, RelayCreds } from './relayGate';
+import { RelayGate, parseHashParts, pageServedByRelay, RelayCreds } from './relayGate';
+import { Keychain } from './keychain';
 import { t, detectLocale } from '../shared/i18n';
 
 const locale = detectLocale(navigator.language);
@@ -51,10 +52,13 @@ async function boot(root: HTMLElement): Promise<void> {
 
   // Relay mode (TC-R3-01 zero-config / TC-R3-02 manual fallback).
   const gate = new RelayGate();
+  const keychain = new Keychain();
   let app: TerminalApp | null = null;
   let everReady = false;
 
   let currentTransport: WebSocketTransport | null = null;
+  // auth-ok 的凭据（钥匙串在 ready 时存它；denied 侧不落盘）
+  let pendingCreds: RelayCreds | null = null;
   const startWith = (creds: RelayCreds): void => {
     // P0：换凭据重试前掐掉旧 transport——否则旧连接的 denied/关闭事件
     // 会继续打到 gate，把用户正在输入的新凭据卡片顶掉。
@@ -62,18 +66,27 @@ async function boot(root: HTMLElement): Promise<void> {
     const transport = new WebSocketTransport(relayWsUrl(), { relay: creds });
     currentTransport = transport;
     setTransport(transport);
+    pendingCreds = creds;
     transport.onRelayState((state) => {
       switch (state) {
-        case 'ready':
+        case 'ready': {
           gate.hide();
           if (!app) app = mountApp(root);
           everReady = true;
+          // v1.3.2 钥匙串：服务端接受后才落盘（多电脑书签的免扫码回访凭据）。
+          if (pendingCreds) keychain.remember(pendingCreds.subCode, pendingCreds.token);
+          pendingCreds = null;
           break;
+        }
         case 'denied':
           gate.showCard(startWith, t(locale, 'relay.gate.denied'));
+          renderSavedDevices();
           break;
         case 'revoked':
+          // 子码已被吊销：钥匙串里这条也一并作废，避免下次继续拿死钥匙试
+          if (pendingCreds) keychain.forget(pendingCreds.subCode);
           gate.showCard(startWith, t(locale, 'relay.gate.revoked'));
+          renderSavedDevices();
           break;
         case 'connecting':
           // After a drop the terminal stays rendered — banner, not overlay.
@@ -83,17 +96,52 @@ async function boot(root: HTMLElement): Promise<void> {
     });
   };
 
-  const creds = parseRelayHash(window.location.hash);
+  /** 手输卡之上的「已保存的电脑」列表（连接走钥匙串、忘记即吊销该行）。 */
+  const renderSavedDevices = (): void => {
+    const devices = keychain.list().map((d) => ({ subCode: d.subCode, daysLeft: d.daysLeft }));
+    gate.appendSavedDevices(
+      devices,
+      (sub) => {
+        const token = keychain.lookup(sub);
+        if (!token) {
+          // 刚过期：重绘列表（该行已被清扫）
+          renderSavedDevices();
+          return;
+        }
+        gate.showConnecting();
+        startWith({ subCode: sub, token });
+      },
+      (sub) => {
+        keychain.forget(sub);
+        renderSavedDevices();
+      },
+    );
+  };
+
+  const parts = parseHashParts(window.location.hash);
+  const creds = parts.subCode && parts.token ? { subCode: parts.subCode, token: parts.token } : null;
   if (creds) {
     // P0：令牌不得驻留浏览器——历史/地址栏/截屏/复制链接都是活凭据。
     // LAN 认证页早就这么做（history.replaceState）；刷新重连靠
     // sessionStorage 快照（仅本标签页存活）。
+    // v1.3.2：片段里保留 #S=<子码>（主机标识，非机密）——书签因此能区分
+    // 多台电脑；仅抹除令牌。
     try {
       sessionStorage.setItem('ternimal.relayCreds', JSON.stringify(creds));
-      history.replaceState(null, '', location.pathname);
+      history.replaceState(null, '', `${location.pathname}#S=${encodeURIComponent(creds.subCode)}`);
     } catch { /* 隐私模式：降级为仅清 URL */ }
     gate.showConnecting();
     startWith(creds);
+  } else if (parts.subCode) {
+    // 书签回访（v1.3.2）：#S=<子码> → 钥匙串取令牌免扫码直连
+    const token = keychain.lookup(parts.subCode);
+    if (token) {
+      gate.showConnecting();
+      startWith({ subCode: parts.subCode, token });
+    } else {
+      gate.showCard(startWith);
+      renderSavedDevices();
+    }
   } else {
     // 刷新恢复：URL 已清，凭据从 sessionStorage 复原（无痕模式则走手输卡）
     let cached: RelayCreds | null = null;
@@ -106,7 +154,8 @@ async function boot(root: HTMLElement): Promise<void> {
       startWith(cached);
       return;
     }
-    gate.showCard(startWith, t(locale, 'relay.gate.badFragment'));
+    gate.showCard(startWith);
+    renderSavedDevices();
   }
 }
 

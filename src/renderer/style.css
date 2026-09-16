@@ -384,6 +384,30 @@ html, body {
 }
 .rg-button:hover { background: #1177bb; }
 .rg-error { color: #f48771; font-size: 12px; min-height: 16px; }
+
+/* v1.3.2 已保存的电脑（钥匙串列表）：手输卡下方的多主机书签回访入口 */
+.rg-saved {
+  border-top: 1px solid #3c3c3c; margin-top: 4px; padding-top: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.rg-saved-title { font-size: 12px; color: #9a9a9a; }
+.rg-saved-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px;
+}
+.rg-saved-sub {
+  font-family: ui-monospace, monospace; color: #d4d4d4;
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rg-saved-days { color: #6a6a6a; font-size: 11px; white-space: nowrap; }
+.rg-saved-btn {
+  background: #0e639c; border: none; color: #fff; border-radius: 4px;
+  padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+.rg-saved-btn:hover { background: #1177bb; }
+.rg-saved-forget { background: transparent; border: 1px solid #3c3c3c; color: #9a9a9a; }
+.rg-saved-forget:hover { background: #3c3c3c; color: #d4d4d4; }
+.rg-saved-hint { font-size: 11px; color: #6a6a6a; line-height: 1.5; }
 .rg-status { font-size: 14px; color: #9a9a9a; }
 .rg-banner {
   position: fixed; top: 0; left: 0; right: 0; z-index: 1999;
