@@ -28,12 +28,17 @@ const gotLock = app.requestSingleInstanceLock({ instanceId: INSTANCE_ID });
 if (!gotLock) {
   console.log(`[Ternimal] instance '${INSTANCE_ID}' already running — exiting.`);
   app.quit();
+  // app.quit() 只是排队退出事件：ready 仍会触发，整机（RemoteServer 抢
+  // 自动端口 + relay 插件同主码重启循环）会带着副作用完整开机一遍才退
+  // （v1.3.0 现场日志实证）。此处必须硬停——此刻尚无任何资源需要善后。
+  process.exit(0);
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    // 托盘驻留（窗口已关，mainWindow=null）时再点图标 = 重建窗口；
+    // createWindow 幂等：已有窗口则 show+focus。restore 覆盖最小化场景。
+    createWindow();
+    if (mainWindow?.isMinimized()) mainWindow.restore();
+    mainWindow?.focus();
   });
 }
 const INSTANCE = instanceIdentity(INSTANCE_ID, INSTANCE_COLOR);
