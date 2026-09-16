@@ -21,8 +21,8 @@
 
 | 平台 | 文件 | 大小 | MD5 |
 |---|---|---|---|
-| Linux x64 (deb) | `ternimal_1.3.1_amd64.deb` | 75.0 MB | 见下方 |
-| Linux x64 (AppImage) | `Ternimal-1.3.1.AppImage` | 108.8 MB | 见下方 |
+| Linux x64 (deb) | `ternimal_1.3.1_amd64.deb` | 75.0 MB | `b4892dd4ec6d9bbac022b48a9c259363` |
+| Linux x64 (AppImage) | `Ternimal-1.3.1.AppImage` | 108.8 MB | `b952e0864f9fc08e5bb0c5a449218edd` |
 
 ## 升级建议
 
