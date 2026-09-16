@@ -85,27 +85,17 @@ async function boot(root: HTMLElement): Promise<void> {
 
   const creds = parseRelayHash(window.location.hash);
   if (creds) {
-    // P0：令牌不得驻留浏览器——历史/地址栏/截屏/复制链接都是活凭据。
-    // LAN 认证页早就这么做（history.replaceState）；刷新重连靠
-    // sessionStorage 快照（仅本标签页存活）。
-    try {
-      sessionStorage.setItem('ternimal.relayCreds', JSON.stringify(creds));
-      history.replaceState(null, '', location.pathname);
-    } catch { /* 隐私模式：降级为仅清 URL */ }
+    // 产品决策（2026-09-16，业主拍板）：完整 URL 常驻地址栏——用户点收藏
+    // 即存下 #S=&T= 全链，书签/刷新/多标签页天然可用；凭据零落盘（URL
+    // 是唯一载体，由用户自行收藏与保管）。代价（已知悉并接受）：地址栏
+    // 截屏/复制链接/浏览器历史会含令牌。缓解：片段不达服务器日志（# 不
+    // 上行）；子码可吊销；分享令牌可轮换。不写 sessionStorage、不
+    // replaceState——任何形式的凭据存储/改写都违背本决策。
     gate.showConnecting();
     startWith(creds);
   } else {
-    // 刷新恢复：URL 已清，凭据从 sessionStorage 复原（无痕模式则走手输卡）
-    let cached: RelayCreds | null = null;
-    try {
-      const raw = sessionStorage.getItem('ternimal.relayCreds');
-      if (raw) cached = JSON.parse(raw) as RelayCreds;
-    } catch { /* corrupted: ignore */ }
-    if (cached) {
-      gate.showConnecting();
-      startWith(cached);
-      return;
-    }
+    // 无片段（用户手清了地址/直达根路径）：URL 里没有凭据，也没有任何
+    // 存储可复原——重新扫码或手输。
     gate.showCard(startWith, t(locale, 'relay.gate.badFragment'));
   }
 }
