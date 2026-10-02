@@ -49,6 +49,17 @@ export async function deriveSessionKey(token: string, nonce: string): Promise<Cr
   return subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 }
 
+/**
+ * 上界估计：plainJson 经 sealFrame 后的线上字节数。
+ * = 4×⌈(utf8字节数+16B GCM tag)/3⌉（base64 膨胀）+ 信封余量。
+ * 调用方（RemoteServer attach 截断）用它保证发出的帧不超
+ * relay 管道 maxPayload（默认 1MB）——超限帧会被 relay 直接断管。
+ */
+export function estimateSealedWireBytes(plainJson: string): number {
+  const plainBytes = enc.encode(plainJson).length + 16; // + GCM tag
+  return 4 * Math.ceil(plainBytes / 3) + 64; // base64 + 信封 slack
+}
+
 /** 封装一帧业务消息（JSON 字符串）。IV 每帧随机。 */
 export async function sealFrame(key: CryptoKey, plaintext: string): Promise<string> {
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));

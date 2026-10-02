@@ -10,6 +10,9 @@
 //     M-04 慢消费者背压 → 只终止该客户端，不扩散（对齐方案书 §3.8）
 //     M-05 容量：全链路（relay+插件+两跳 TLS）≥3MB/s + relay 字节计数器一致
 //     M-06 并发：单通道第 5 管道拒收；16 客户端 × 4 通道并发交互全通
+//   M-07 单帧预算回归（2026-10-03 线上事故）：满 1MB 回放密封后 ≈1.4MB 超
+//     relay /pipe maxPayload（1MB）→ attach 即断管 → 客户端「重连风暴」。
+//     修复后 attached.replay 按线上预算截断（保最新），管道存活。
 //
 // 自包含（同 verify-relay-e2e.mjs 惯例：无框架、严格退出码）。
 import { execSync, fork } from 'node:child_process';
@@ -526,6 +529,61 @@ test('M-06 TC-R4-04 子集·并发：单通道第 5 管道拒收；4 管道承�
     }));
     for (const c of clients) c.ws.close();
   } finally {
+    plugin.post({ type: 'shutdown' });
+    await plugin.exited();
+    await relay.server.stop();
+    await rs.server.stop();
+  }
+});
+
+test('M-07 单帧预算·满 1MB 回放 attach → replay 截断且管道存活（重连风暴回归）', async () => {
+  const rs = await startRemoteServer(); // replayBytes = 1MB（线上默认）
+  const relay = await startRelay(); // limits 默认 → maxPayloadBytes = 1MB（线上默认）
+  const plugin = forkPlugin({
+    relayUrl: `http://127.0.0.1:${relay.port}`, masterCode: relay.master,
+    localPort: rs.port, fingerprint: rs.fingerprint,
+  });
+  await plugin.waitFor((m) => m.type === 'status' && m.state === 'registered');
+  const sub = await issueSub(relay, 'm7');
+
+  // 直接经 registry 建会话并灌满 ring buffer（cap 1MB）：最老内容被挤出，
+  // TAIL 标记留在最新处——截断必须保最新。
+  const created = rs.registry.create({ cols: 80, rows: 24 });
+  const pty = rs.host.ptys.get(created.id);
+  const line = 'x'.repeat(63) + '\n';
+  for (let i = 0; i < Math.ceil((1024 * 1024 * 1.1) / line.length); i++) pty.emitOutput(line);
+  pty.emitOutput('TAIL-MARKER-m7\n');
+
+  const tp = new WebSocketTransport(`ws://127.0.0.1:${relay.port}/join`, {
+    wsImpl: WebSocket, relay: { subCode: sub.subCode, token: TOKEN },
+  });
+  try {
+    await pollUntil(() => tp.relayGate === 'ready', 'initial ready');
+    // 老症状下 attached 帧本身超限断管，attached 永远到不了 → 8s 超时即红
+    const attP = new Promise((res) => { const un = tp.onAttached((p) => { un(); res(p); }); });
+    tp.attach(created.id);
+    const att = await Promise.race([
+      attP,
+      sleep(8000).then(() => { throw new Error('attached 未到达（疑似单帧超限断管）'); }),
+    ]);
+    assert.ok(String(att.replay ?? '').includes('TAIL-MARKER-m7'), '截断保最新（TAIL 标记仍在）');
+    assert.ok(att.replay.length < 1024 * 1024, `replay 已截断（${att.replay.length}B < 1MB）`);
+
+    // 管道存活证明：attach 后继续产出，数据仍实时到达，且全程无重连
+    const states = [];
+    const unSt = tp.onRelayState((s) => states.push(s));
+    pty.emitOutput('AFTER-ATTACH-m7\n');
+    await Promise.race([
+      new Promise((res) => {
+        const un = tp.onData((p) => { if (String(p.data).includes('AFTER-ATTACH-m7')) { un(); res(); } });
+      }),
+      sleep(8000).then(() => { throw new Error('attach 后实时数据未到达（疑似管道已断）'); }),
+    ]);
+    unSt();
+    assert.ok(!states.includes('connecting'), `attach 后无重连（状态流: ${states.join(',') || '无'}）`);
+    assert.equal(tp.relayGate, 'ready', 'gate 稳定 ready');
+  } finally {
+    tp.dispose();
     plugin.post({ type: 'shutdown' });
     await plugin.exited();
     await relay.server.stop();

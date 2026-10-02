@@ -14,11 +14,20 @@
 //   Frame/message names are PERMANENT once shipped — never reuse or repurpose.
 
 import type { SessionInfo } from './ipcChannels';
+import { estimateSealedWireBytes } from './e2ee';
 
 export const WS = {
   PATH: '/ws',
   /** Messages larger than this are rejected with BAD_MESSAGE + disconnect. */
   MAX_MESSAGE_BYTES: 1024 * 1024,
+  /**
+   * 出站密文帧（secure 信封）的字节预算。relay /pipe 的 maxPayload
+   * 默认 1MB（relay/src/server.mjs）：一个 1MB 回放密封后 ≈1.4MB，
+   * attach 必超限 → 管道被断（host error）→ 客户端重连再 attach 的
+   * 死循环（2026-10-02 线上事故）。预算留足 base64×4/3 + tag + 信封
+   * 余量后取整 900KB；本地 IPC/窗口路径无帧上限，不受影响。
+   */
+  MAX_SECURE_FRAME_BYTES: 900 * 1024,
   ERROR_CODES: {
     AUTH_REQUIRED: 4001,
     RATE_LIMITED: 4002,
@@ -199,6 +208,29 @@ export type ServerMessage =
 
 export function encodeServerMessage(msg: ServerMessage): string {
   return JSON.stringify(msg);
+}
+
+/**
+ * 裁剪回放串直至 serialize(replay) 密封后不超 budgetBytes（relay 管道
+ * maxPayload 硬限）。只从头部丢（保最新输出），优先对齐到行首让终端
+ * 首行完整；无换行的极端单行（如 base64 转储）允许硬切——仅首行残缺。
+ * serialize 必须对 replay 确定（就是真实帧的构造器），否则估不准。
+ * 收敛性：每轮至少砍 25%，O(log) 轮内到空串。
+ */
+export function fitReplayToBudget(
+  replay: string,
+  serialize: (replay: string) => string,
+  budgetBytes: number,
+): string {
+  let fitted = replay;
+  while (fitted.length > 0 && estimateSealedWireBytes(serialize(fitted)) > budgetBytes) {
+    // cut 至少 1：len≤3 时 floor(0.75×len) 可能为 0，slice(0) 返回自身
+    // 会死循环（单测抓出）——保证每轮严格变短才是收敛的前提。
+    const cut = Math.max(1, Math.min(Math.floor(fitted.length * 0.75), fitted.length - 1));
+    const nl = fitted.indexOf('\n', cut);
+    fitted = nl === -1 ? fitted.slice(cut) : fitted.slice(nl + 1);
+  }
+  return fitted;
 }
 
 /**

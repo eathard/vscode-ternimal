@@ -25,6 +25,7 @@ import type { SessionInfo, DataPayload, ExitPayload, TitlePayload } from '../sha
 import {
   WS,
   encodeServerMessage,
+  fitReplayToBudget,
   parseClientMessage,
   type ClientMessage,
   type ServerMessage,
@@ -598,14 +599,17 @@ export class RemoteServer {
           return;
         }
         client.attached.add(msg.id);
-        this.sendTo(client, {
-          type: 'attached',
-          id: session.id,
-          replay: this.registry.getReplay(session.id),
-          cols: session.cols,
-          rows: session.rows,
-          title: session.title,
-        } as WsAttachedMsg);
+        // 回放可能近 1MB（replayBytes 上限），密封后 ≈1.4MB 超 relay 管道
+        // maxPayload（1MB）→ attach 即断管死循环。按线上预算从头部裁剪，
+        // 保留最新输出；本地 IPC 路径不走这里，无帧上限。
+        const build = (replay: string): WsAttachedMsg =>
+          ({ type: 'attached', id: session.id, replay, cols: session.cols, rows: session.rows, title: session.title });
+        const replay = fitReplayToBudget(
+          this.registry.getReplay(session.id),
+          (r) => encodeServerMessage(build(r)),
+          WS.MAX_SECURE_FRAME_BYTES,
+        );
+        this.sendTo(client, build(replay));
         return;
       }
       case 'detach':
